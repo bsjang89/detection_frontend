@@ -44,6 +44,16 @@ export interface TrainingSession {
   created_at: string;
 }
 
+export interface TrainingSessionStatusResponse {
+  id: number;
+  status: TrainingStatus;
+  progress: number;
+  started_at: string | null;
+  completed_at: string | null;
+  error_message: string | null;
+  is_active: boolean;
+}
+
 export interface MetricsLog {
   id: number;
   training_session_id: number;
@@ -85,7 +95,10 @@ export const trainingApi = {
     client.get<TrainingSession>(`/training/sessions/${sessionId}`),
 
   getStatus: (sessionId: number) =>
-    client.get(`/training/sessions/${sessionId}/status`),
+    client.get<TrainingSessionStatusResponse>(`/training/sessions/${sessionId}/status`),
+
+  deleteSession: (sessionId: number) =>
+    client.delete(`/training/sessions/${sessionId}`),
 
   getMetrics: (sessionId: number) =>
     client.get<MetricsLog[]>(`/training/sessions/${sessionId}/metrics`),

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
+import axios from "axios";
 import { projectsApi } from "../api/projects";
 import { trainingApi } from "../api/training";
 import type { ProjectWithStats } from "../api/projects";
@@ -15,13 +16,13 @@ const MODEL_OPTIONS = [
 ];
 
 const DEFAULT_CONFIG: TrainingConfig = {
-  epochs: 100,
+  epochs: 50,
   batch: 16,
   imgsz: 640,
   lr0: 0.01,
   patience: 50,
   cache: true,
-  workers: 8,
+  workers: 0,
   optimizer: "auto",
   pretrained: true,
   mosaic: 0.5,
@@ -37,6 +38,8 @@ export default function TrainingPage() {
   const [project, setProject] = useState<ProjectWithStats | null>(null);
   const [sessions, setSessions] = useState<TrainingSession[]>([]);
   const [loading, setLoading] = useState(true);
+  const [selectedSessionIds, setSelectedSessionIds] = useState<number[]>([]);
+  const [deleting, setDeleting] = useState(false);
 
   // Form state
   const [sessionName, setSessionName] = useState("");
@@ -62,10 +65,20 @@ export default function TrainingPage() {
       ]);
       setProject(pRes.data);
       setSessions(sRes.data);
+      setSelectedSessionIds([]);
 
       // Adjust defaults for OBB
       if (pRes.data.task_type === "obb") {
-        setConfig((c) => ({ ...c, imgsz: 768, lr0: 0.005, epochs: 300, close_mosaic: 10, batch: 32 }));
+        const isSmallDataset = (pRes.data.total_images ?? 0) <= 200;
+        setConfig((c) => ({
+          ...c,
+          imgsz: isSmallDataset ? 640 : 768,
+          lr0: 0.005,
+          epochs: 50,
+          close_mosaic: 10,
+          batch: isSmallDataset ? 16 : 32,
+          patience: isSmallDataset ? 20 : 50,
+        }));
       }
     } catch (e) {
       console.error(e);
@@ -106,13 +119,117 @@ export default function TrainingPage() {
       // Navigate to monitoring page
       navigate(`/projects/${pid}/monitoring/${session.data.id}`);
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : "Failed to start training";
+      const detail = axios.isAxiosError(e) ? e.response?.data?.detail : undefined;
+      const msg = detail ?? (e instanceof Error ? e.message : "Failed to start training");
       alert(msg);
     }
   }
 
   function updateConfig<K extends keyof TrainingConfig>(key: K, value: TrainingConfig[K]) {
     setConfig((c) => ({ ...c, [key]: value }));
+  }
+
+  function sleep(ms: number) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  async function waitUntilSessionInactive(sessionId: number, timeoutMs = 60000) {
+    const started = Date.now();
+    while (Date.now() - started < timeoutMs) {
+      const status = await trainingApi.getStatus(sessionId);
+      if (!status.data.is_active) return true;
+      await sleep(1000);
+    }
+    return false;
+  }
+
+  async function stopIfRunning(session: TrainingSession) {
+    if (session.status !== "running") return true;
+    await trainingApi.stopTraining(session.id);
+    return waitUntilSessionInactive(session.id);
+  }
+
+  async function handleDeleteSession(session: TrainingSession) {
+    const title = session.name ?? `Session ${session.id}`;
+    const ask = session.status === "running"
+      ? `\"${title}\" 은(는) 현재 진행중입니다.\n중지 후 삭제할까요?`
+      : `\"${title}\" 을(를) 삭제할까요?`;
+
+    if (!confirm(ask)) return;
+
+    setDeleting(true);
+    try {
+      const inactive = await stopIfRunning(session);
+      if (!inactive) {
+        alert(`\"${title}\" 중지 대기 시간이 초과되었습니다. 잠시 후 다시 시도해주세요.`);
+        return;
+      }
+
+      await trainingApi.deleteSession(session.id);
+      await loadData();
+    } catch (e: unknown) {
+      const detail = axios.isAxiosError(e) ? e.response?.data?.detail : undefined;
+      alert(detail ?? `\"${title}\" 삭제 실패`);
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  async function handleDeleteSelected() {
+    if (selectedSessionIds.length === 0) {
+      alert("삭제할 항목을 선택해주세요.");
+      return;
+    }
+
+    const selected = sessions.filter((s) => selectedSessionIds.includes(s.id));
+    const runningCount = selected.filter((s) => s.status === "running").length;
+    const ask = runningCount > 0
+      ? `선택한 ${selected.length}개 중 ${runningCount}개는 진행중입니다.\n중지 후 삭제할까요?`
+      : `선택한 ${selected.length}개를 삭제할까요?`;
+
+    if (!confirm(ask)) return;
+
+    setDeleting(true);
+    try {
+      const failed: string[] = [];
+
+      for (const session of selected) {
+        const title = session.name ?? `Session ${session.id}`;
+        try {
+          const inactive = await stopIfRunning(session);
+          if (!inactive) {
+            failed.push(`${title} (중지 대기 시간 초과)`);
+            continue;
+          }
+          await trainingApi.deleteSession(session.id);
+        } catch {
+          failed.push(title);
+        }
+      }
+
+      await loadData();
+
+      if (failed.length > 0) {
+        alert(`일부 삭제 실패:\n${failed.join("\n")}`);
+      }
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  function toggleSessionSelection(sessionId: number, checked: boolean) {
+    setSelectedSessionIds((prev) => {
+      if (checked) return [...prev, sessionId];
+      return prev.filter((id) => id !== sessionId);
+    });
+  }
+
+  function toggleSelectAll(checked: boolean) {
+    if (checked) {
+      setSelectedSessionIds(sessions.map((s) => s.id));
+    } else {
+      setSelectedSessionIds([]);
+    }
   }
 
   if (loading) return <div style={{ padding: 24 }}>Loading...</div>;
@@ -244,13 +361,29 @@ export default function TrainingPage() {
 
       {/* Previous Sessions */}
       <section style={{ ...cardStyle, marginTop: 16 }}>
-        <h3 style={{ marginTop: 0 }}>Previous Sessions</h3>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+          <h3 style={{ marginTop: 0, marginBottom: 0 }}>Previous Sessions</h3>
+          <button
+            onClick={handleDeleteSelected}
+            disabled={deleting || selectedSessionIds.length === 0}
+            style={{ ...btnStyle, background: "#b91c1c", opacity: deleting || selectedSessionIds.length === 0 ? 0.6 : 1 }}
+          >
+            Delete Selected ({selectedSessionIds.length})
+          </button>
+        </div>
         {sessions.length === 0 ? (
           <p style={{ color: "#888" }}>No training sessions yet.</p>
         ) : (
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
             <thead>
               <tr style={{ textAlign: "left", borderBottom: "1px solid #444" }}>
+                <th style={thStyle}>
+                  <input
+                    type="checkbox"
+                    checked={sessions.length > 0 && selectedSessionIds.length === sessions.length}
+                    onChange={(e) => toggleSelectAll(e.target.checked)}
+                  />
+                </th>
                 <th style={thStyle}>Name</th>
                 <th style={thStyle}>Model</th>
                 <th style={thStyle}>Status</th>
@@ -262,6 +395,13 @@ export default function TrainingPage() {
             <tbody>
               {sessions.map((s) => (
                 <tr key={s.id} style={{ borderBottom: "1px solid #333" }}>
+                  <td style={tdStyle}>
+                    <input
+                      type="checkbox"
+                      checked={selectedSessionIds.includes(s.id)}
+                      onChange={(e) => toggleSessionSelection(s.id, e.target.checked)}
+                    />
+                  </td>
                   <td style={tdStyle}>{s.name ?? `Session ${s.id}`}</td>
                   <td style={tdStyle}>{s.model_type}</td>
                   <td style={tdStyle}>
@@ -269,9 +409,16 @@ export default function TrainingPage() {
                   </td>
                   <td style={tdStyle}>{s.final_map50 != null ? (s.final_map50 * 100).toFixed(1) + "%" : "-"}</td>
                   <td style={tdStyle}>{s.progress.toFixed(0)}%</td>
-                  <td style={tdStyle}>
+                  <td style={{ ...tdStyle, display: "flex", gap: 8 }}>
                     <button onClick={() => navigate(`/projects/${pid}/monitoring/${s.id}`)} style={{ ...btnStyle, padding: "4px 8px", fontSize: 12 }}>
                       Monitor
+                    </button>
+                    <button
+                      onClick={() => handleDeleteSession(s)}
+                      disabled={deleting}
+                      style={{ ...btnStyle, padding: "4px 8px", fontSize: 12, background: "#b91c1c", opacity: deleting ? 0.6 : 1 }}
+                    >
+                      Delete
                     </button>
                   </td>
                 </tr>

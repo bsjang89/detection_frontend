@@ -9,6 +9,7 @@ import type { AnnotationResponse } from "../api/annotations";
 import type { BoxAnno } from "../types";
 
 type AnnoMap = Record<number, BoxAnno[]>; // imageId -> boxes
+const AUTO_SAVE_DEBOUNCE_MS = 800;
 
 export default function ProjectLabelingPage() {
   const { projectId } = useParams<{ projectId: string }>();
@@ -25,6 +26,7 @@ export default function ProjectLabelingPage() {
   const [activeClassId, setActiveClassId] = useState(0);
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState<Set<number>>(new Set());
+  const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const current = images[idx] ?? null;
   const currentBoxes = current ? annos[current.id] ?? [] : [];
@@ -46,7 +48,8 @@ export default function ProjectLabelingPage() {
       setImages(iRes.data);
       setClasses(cRes.data);
       if (cRes.data.length > 0) {
-        setActiveClassId(cRes.data[0].class_id);
+        // Backend annotation payload expects classes.id
+        setActiveClassId(cRes.data[0].id);
       }
     } catch (e) {
       console.error(e);
@@ -89,12 +92,17 @@ export default function ProjectLabelingPage() {
 
   // Convert BoxAnno (pixel) -> API format (normalized + pixel)
   function boxToApi(b: BoxAnno, imgW: number, imgH: number) {
+    function clamp01(v: number) {
+      if (!Number.isFinite(v)) return 0;
+      return Math.min(1, Math.max(0, v));
+    }
+
     return {
       class_id: b.classId,
-      cx: imgW > 0 ? b.cx / imgW : 0,
-      cy: imgH > 0 ? b.cy / imgH : 0,
-      width: imgW > 0 ? b.w / imgW : 0,
-      height: imgH > 0 ? b.h / imgH : 0,
+      cx: imgW > 0 ? clamp01(b.cx / imgW) : 0,
+      cy: imgH > 0 ? clamp01(b.cy / imgH) : 0,
+      width: imgW > 0 ? clamp01(Math.abs(b.w) / imgW) : 0,
+      height: imgH > 0 ? clamp01(Math.abs(b.h) / imgH) : 0,
       rotation: b.rotation,
       px_cx: b.cx,
       px_cy: b.cy,
@@ -114,22 +122,26 @@ export default function ProjectLabelingPage() {
   }
 
   // Save annotations for a specific image
-  async function saveImageAnnotations(img: ImageInfo) {
-    const boxes = annos[img.id] ?? [];
+  const saveImageAnnotations = useCallback(async (img: ImageInfo, boxesOverride?: BoxAnno[]) => {
+    const boxes = boxesOverride ?? annos[img.id] ?? [];
     await annotationsApi.batchSave(img.id, boxes.map((b) => boxToApi(b, img.width, img.height)));
     setDirty((prev) => {
       const next = new Set(prev);
       next.delete(img.id);
       return next;
     });
-  }
+  }, [annos]);
 
   // Save current image annotations
   async function saveCurrentAnnotations() {
     if (!current) return;
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current);
+      autoSaveTimerRef.current = null;
+    }
     setSaving(true);
     try {
-      await saveImageAnnotations(current);
+      await saveImageAnnotations(current, currentBoxes);
     } catch (e) {
       alert("저장 실패");
       console.error(e);
@@ -140,15 +152,50 @@ export default function ProjectLabelingPage() {
 
   // Auto-save when navigating away from an image
   const saveAndGo = useCallback(async (newIdx: number) => {
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current);
+      autoSaveTimerRef.current = null;
+    }
     if (current && dirty.has(current.id)) {
       try {
-        await saveImageAnnotations(current);
+        setSaving(true);
+        await saveImageAnnotations(current, annos[current.id] ?? []);
       } catch (e) {
         console.error("Auto-save failed", e);
+      } finally {
+        setSaving(false);
       }
     }
     setIdx(newIdx);
-  }, [current, dirty, annos]);
+  }, [current, dirty, annos, saveImageAnnotations]);
+
+  // Auto-save while editing current image (debounced)
+  useEffect(() => {
+    if (!current) return;
+    if (!dirty.has(current.id)) return;
+
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current);
+    }
+
+    autoSaveTimerRef.current = setTimeout(async () => {
+      try {
+        setSaving(true);
+        await saveImageAnnotations(current, annos[current.id] ?? []);
+      } catch (e) {
+        console.error("Auto-save while editing failed", e);
+      } finally {
+        setSaving(false);
+      }
+    }, AUTO_SAVE_DEBOUNCE_MS);
+
+    return () => {
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current);
+        autoSaveTimerRef.current = null;
+      }
+    };
+  }, [current, dirty, annos, saveImageAnnotations]);
 
   function prev() { if (idx > 0) saveAndGo(idx - 1); }
   function next() { if (idx < images.length - 1) saveAndGo(idx + 1); }
@@ -160,7 +207,7 @@ export default function ProjectLabelingPage() {
       if (tag === "input" || tag === "textarea") return;
       if (/^[1-9]$/.test(e.key)) {
         const num = Number(e.key) - 1;
-        if (classes[num]) setActiveClassId(classes[num].class_id);
+        if (classes[num]) setActiveClassId(classes[num].id);
       }
       if (e.key === "ArrowRight" || e.key.toLowerCase() === "d") next();
       if (e.key === "ArrowLeft" || e.key.toLowerCase() === "a") prev();
@@ -181,6 +228,14 @@ export default function ProjectLabelingPage() {
     const labeled = images.filter((im) => (annos[im.id]?.length ?? 0) > 0 || im.annotation_count > 0).length;
     return { labeled, total: images.length };
   }, [images, annos]);
+
+  const classColorMap = useMemo(() => {
+    const map: Record<number, string> = {};
+    for (const c of classes) {
+      map[c.id] = c.color ?? "#ffffff";
+    }
+    return map;
+  }, [classes]);
 
   if (loading) return <div style={{ padding: 24, color: "#e5e5e5" }}>Loading...</div>;
   if (!project) return <div style={{ padding: 24, color: "#e5e5e5" }}>Project not found</div>;
@@ -239,6 +294,8 @@ export default function ProjectLabelingPage() {
             boxes={currentBoxes}
             setBoxes={setCurrentBoxes}
             activeClassId={activeClassId}
+            classColors={classColorMap}
+            viewerHeight="calc(100vh - 130px)"
           />
         ) : (
           <div style={{ padding: 40, border: "1px dashed #444", borderRadius: 12, textAlign: "center", color: "#888" }}>
@@ -257,12 +314,12 @@ export default function ProjectLabelingPage() {
           {classes.map((c, i) => (
             <div
               key={c.id}
-              onClick={() => setActiveClassId(c.class_id)}
+              onClick={() => setActiveClassId(c.id)}
               style={{
                 padding: "8px 10px",
                 borderRadius: 8,
                 cursor: "pointer",
-                background: c.class_id === activeClassId ? "#2563eb" : "#222",
+                background: c.id === activeClassId ? "#2563eb" : "#222",
                 display: "flex",
                 alignItems: "center",
                 gap: 8,
@@ -287,7 +344,7 @@ export default function ProjectLabelingPage() {
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 4, maxHeight: 300, overflow: "auto" }}>
             {currentBoxes.map((b, i) => {
-              const cls = classes.find((c) => c.class_id === b.classId);
+              const cls = classes.find((c) => c.id === b.classId);
               return (
                 <div key={b.id} style={{ fontSize: 12, color: "#ccc", padding: "4px 6px", background: "#222", borderRadius: 4, display: "flex", gap: 6, alignItems: "center" }}>
                   <div style={{ width: 10, height: 10, borderRadius: 2, background: cls?.color ?? "#888", flexShrink: 0 }} />
@@ -305,10 +362,15 @@ export default function ProjectLabelingPage() {
           <ul style={{ fontSize: 12, color: "#999", lineHeight: 1.8, paddingLeft: 16, margin: 0 }}>
             <li>Drag: new box</li>
             <li>Click box: select &rarr; resize/rotate</li>
+            <li>Ctrl + wheel: zoom in/out</li>
+            <li>Wheel: pan canvas</li>
+            <li>Double-click: fit to screen</li>
+            <li>Use Fit / 100% / Pan in viewer toolbar</li>
+            <li>Bottom-right minimap: click/drag to navigate</li>
             <li>Class: number keys 1-9</li>
             <li>Navigate: A/D or &larr;/&rarr;</li>
             <li>Save: Ctrl+S</li>
-            <li>Auto-saves when switching images</li>
+            <li>Auto-saves while editing and when switching images</li>
           </ul>
         </div>
       </div>

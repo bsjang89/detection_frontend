@@ -87,15 +87,15 @@ export default function ProjectDetailPage() {
   }
 
   function thumbnailUrl(img: ImageInfo) {
-    // file_path is relative like "uploads/1/images/foo.jpg"
-    return `${API_SERVER_URL}/${img.file_path.replace(/\\/g, "/")}`;
+    const relativePath = (img.thumbnail_path ?? img.file_path).replace(/\\/g, "/");
+    return `${API_SERVER_URL}/${relativePath}`;
   }
 
   if (loading) return <div style={{ padding: 24, color: "#e5e5e5" }}>Loading...</div>;
   if (!project) return <div style={{ padding: 24, color: "#e5e5e5" }}>Project not found</div>;
 
   return (
-    <div style={{ maxWidth: 1200, margin: "0 auto", padding: 24, color: "#e5e5e5" }}>
+    <div style={{ maxWidth: 1200, margin: "0 auto", padding: 24, color: "#e5e5e5", fontSize: 16, lineHeight: 1.4 }}>
       {/* Header */}
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 24 }}>
         <button onClick={() => navigate("/")} style={btnStyle}>Projects</button>
@@ -129,10 +129,10 @@ export default function ProjectDetailPage() {
       {uploading && (
         <div style={{ ...cardStyle, marginBottom: 16 }}>
           <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-            <span style={{ color: "#ccc", fontSize: 13 }}>
+            <span style={{ color: "#ccc", fontSize: 15 }}>
               Uploading {uploadTotal} images...
             </span>
-            <span style={{ color: "#fff", fontWeight: 700, fontSize: 13 }}>
+            <span style={{ color: "#fff", fontWeight: 700, fontSize: 15 }}>
               {uploadProgress}%
             </span>
           </div>
@@ -191,12 +191,12 @@ export default function ProjectDetailPage() {
               {classes.map((c) => (
                 <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: 8, background: "#2a2a2a", borderRadius: 6 }}>
                   <div style={{ width: 16, height: 16, borderRadius: 4, background: c.color ?? "#888", flexShrink: 0 }} />
-                  <span style={{ fontSize: 13, color: "#e5e5e5", flex: 1 }}>{c.class_name}</span>
-                  <span style={{ fontSize: 11, color: "#888" }}>ID: {c.class_id}</span>
+                  <span style={{ fontSize: 15, color: "#e5e5e5", flex: 1 }}>{c.class_name}</span>
+                  <span style={{ fontSize: 13, color: "#888" }}>ID: {c.class_id}</span>
                 </div>
               ))}
               {classes.length === 0 && (
-                <p style={{ color: "#888", fontSize: 13 }}>No classes defined yet.</p>
+                <p style={{ color: "#888", fontSize: 15 }}>No classes defined yet.</p>
               )}
             </div>
 
@@ -225,7 +225,7 @@ export default function ProjectDetailPage() {
           {/* Labeling Guide */}
           <section style={cardStyle}>
             <h3 style={{ margin: "0 0 8px", color: "#fff" }}>Labeling</h3>
-            <p style={{ fontSize: 13, color: "#aaa", lineHeight: 1.6, margin: "0 0 12px" }}>
+            <p style={{ fontSize: 15, color: "#aaa", lineHeight: 1.6, margin: "0 0 12px" }}>
               이미지를 업로드한 후 레이블링을 시작하세요.
               어노테이션은 서버에 자동 저장됩니다.
             </p>
@@ -321,7 +321,7 @@ function VirtualImageList({ images, thumbnailUrl }: { images: ImageInfo[]; thumb
               />
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{
-                  fontSize: 13,
+                  fontSize: 15,
                   color: "#e5e5e5",
                   overflow: "hidden",
                   textOverflow: "ellipsis",
@@ -329,7 +329,7 @@ function VirtualImageList({ images, thumbnailUrl }: { images: ImageInfo[]; thumb
                 }}>
                   {img.filename}
                 </div>
-                <div style={{ fontSize: 11, color: "#888" }}>
+                <div style={{ fontSize: 13, color: "#888" }}>
                   {img.width}x{img.height} &middot; {img.annotation_count} annotations
                 </div>
               </div>
@@ -345,21 +345,21 @@ function VirtualImageList({ images, thumbnailUrl }: { images: ImageInfo[]; thumb
 function StatBox({ label, value }: { label: string; value: number }) {
   return (
     <div style={{ textAlign: "center", padding: 10, background: "#2a2a2a", borderRadius: 8 }}>
-      <div style={{ fontSize: 20, fontWeight: 700, color: "#fff" }}>{value}</div>
-      <div style={{ fontSize: 11, color: "#999" }}>{label}</div>
+      <div style={{ fontSize: 24, fontWeight: 700, color: "#fff" }}>{value}</div>
+      <div style={{ fontSize: 13, color: "#999" }}>{label}</div>
     </div>
   );
 }
 
 function badgeStyle(type: string): React.CSSProperties {
-  return { padding: "2px 8px", borderRadius: 4, fontSize: 11, fontWeight: 700, background: type === "obb" ? "#7c3aed" : "#2563eb", color: "#fff" };
+  return { padding: "3px 10px", borderRadius: 4, fontSize: 13, fontWeight: 700, background: type === "obb" ? "#7c3aed" : "#2563eb", color: "#fff" };
 }
 
 function splitBadge(split: string): React.CSSProperties {
   const colors: Record<string, string> = { train: "#16a34a", val: "#2563eb", test: "#ca8a04", unlabeled: "#555" };
-  return { padding: "2px 6px", borderRadius: 4, fontSize: 10, fontWeight: 600, background: colors[split] ?? "#555", color: "#fff" };
+  return { padding: "3px 8px", borderRadius: 4, fontSize: 12, fontWeight: 600, background: colors[split] ?? "#555", color: "#fff" };
 }
 
-const btnStyle: React.CSSProperties = { padding: "8px 16px", borderRadius: 8, border: "none", background: "#333", color: "#fff", cursor: "pointer", fontSize: 14, fontWeight: 500 };
-const inputStyle: React.CSSProperties = { padding: "8px 12px", borderRadius: 8, border: "1px solid #444", background: "#1a1a1a", color: "#fff", fontSize: 15 };
+const btnStyle: React.CSSProperties = { padding: "10px 18px", borderRadius: 8, border: "none", background: "#333", color: "#fff", cursor: "pointer", fontSize: 16, fontWeight: 500 };
+const inputStyle: React.CSSProperties = { padding: "10px 14px", borderRadius: 8, border: "1px solid #444", background: "#1a1a1a", color: "#fff", fontSize: 16 };
 const cardStyle: React.CSSProperties = { background: "#1a1a1a", borderRadius: 12, padding: 24, border: "1px solid #2a2a2a" };

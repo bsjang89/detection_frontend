@@ -1,4 +1,5 @@
 import { useState, useCallback } from "react";
+import axios from "axios";
 import { trainingApi } from "../api/training";
 import type { TrainingSession, MetricsLog, TrainingConfig } from "../api/training";
 import { useWebSocket } from "./useWebSocket";
@@ -79,7 +80,8 @@ export function useTraining(projectId: number | null) {
       const res = await trainingApi.getSession(sessionId);
       setActiveSession(res.data);
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : "Failed to start training";
+      const detail = axios.isAxiosError(e) ? e.response?.data?.detail : undefined;
+      const msg = detail ?? (e instanceof Error ? e.message : "Failed to start training");
       setError(msg);
       throw e;
     }

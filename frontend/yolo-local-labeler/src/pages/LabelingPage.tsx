@@ -232,6 +232,7 @@ export default function LabelingPage() {
               boxes={currentBoxes}
               setBoxes={setCurrentBoxes}
               activeClassId={activeClassId}
+              viewerHeight="calc(100vh - 120px)"
             />
           ) : (
             <div style={{ padding: 20, border: "1px dashed #9ca3af", borderRadius: 12 }}>

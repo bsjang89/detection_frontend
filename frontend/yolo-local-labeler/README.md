@@ -1,73 +1,89 @@
-# React + TypeScript + Vite
+# YOLO Local Labeler Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+React frontend for object detection workflows:
 
-Currently, two official plugins are available:
+- project management
+- image labeling (BBox/OBB)
+- training session setup and monitoring
+- model comparison and reporting
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+## Screen Flow
 
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```mermaid
+flowchart LR
+    A[Project List] --> B[Project Detail]
+    B --> C[Labeling]
+    B --> D[Training Setup]
+    D --> E[Monitoring]
+    E --> F[Model Compare / Report]
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## Tech Stack
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+- React 19 + TypeScript
+- Vite (rolldown-vite)
+- React Router
+- Axios
+- Recharts
+- Konva
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+## Quick Start
+
+### 1) Requirements
+
+- Node.js 18+ (20+ recommended)
+- npm 9+
+- Running backend API (`http://localhost:8000`)
+
+### 2) Install and Run
+
+```powershell
+cd detection_frontend\frontend\yolo-local-labeler
+npm install
+npm run dev
 ```
+
+- URL: `http://localhost:5173`
+
+## Environment Variables
+
+Create `.env` in this folder:
+
+```env
+VITE_API_BASE_URL=http://localhost:8000
+```
+
+Base URL normalization rules:
+
+- `http://localhost:8000` -> `http://localhost:8000/api/v1`
+- `http://localhost:8000/api` -> `http://localhost:8000/api/v1`
+- `http://localhost:8000/api/v1` -> unchanged
+
+## Scripts
+
+```bash
+npm run dev
+npm run build
+npm run preview
+npm run lint
+```
+
+## Route Map
+
+| Path | Description |
+|---|---|
+| `/` | Project list |
+| `/projects/:projectId` | Project detail |
+| `/projects/:projectId/labeling` | Labeling screen |
+| `/projects/:projectId/training` | Training setup and history |
+| `/projects/:projectId/monitoring/:sessionId` | Training monitoring |
+| `/compare` | Model comparison |
+| `/report` | Report page |
+
+## Backend Dependency
+
+- REST: `http://localhost:8000/api/v1/*`
+- WS: `ws://localhost:8000/api/v1/ws/training/{session_id}`
+
+Start the backend before using training and monitoring pages.
+

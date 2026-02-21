@@ -45,6 +45,7 @@ export interface ImageInfo {
   project_id: number;
   filename: string;
   file_path: string;
+  thumbnail_path?: string | null;
   width: number;
   height: number;
   split_type: string;

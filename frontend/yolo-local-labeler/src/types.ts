@@ -1,6 +1,6 @@
 export type ClassDef = { id: number; name: string };
 
-type BoxAnno = {
+export type BoxAnno = {
   id: string;
   classId: number;
   cx: number;
@@ -8,8 +8,8 @@ type BoxAnno = {
   w: number;
   h: number;
   rotation: number;
-
-  // ✅ 드로잉용 (임시)
+  // Temporary fields used while drawing.
   startX?: number;
   startY?: number;
 };
+

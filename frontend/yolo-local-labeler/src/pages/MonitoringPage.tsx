@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
+import axios from "axios";
 import {
   LineChart,
   Line,
@@ -39,6 +40,7 @@ export default function MonitoringPage() {
   const [session, setSession] = useState<TrainingSession | null>(null);
   const [metricsData, setMetricsData] = useState<LivePoint[]>([]);
   const [loading, setLoading] = useState(true);
+  const [deleting, setDeleting] = useState(false);
 
   // Load session and historical metrics
   useEffect(() => {
@@ -106,9 +108,9 @@ export default function MonitoringPage() {
     onMessage: handleWsMessage,
   });
 
-  // Polling fallback when WS is not connected
+  // Polling safeguard: keep UI progressing even if WS messages are delayed/missed.
   useEffect(() => {
-    if (!isRunning || connected) return;
+    if (!isRunning) return;
     const interval = setInterval(async () => {
       try {
         const sRes = await trainingApi.getSession(sid);
@@ -133,7 +135,7 @@ export default function MonitoringPage() {
       } catch { /* ignore */ }
     }, 5000);
     return () => clearInterval(interval);
-  }, [isRunning, connected, sid]);
+  }, [isRunning, sid]);
 
   async function handleStop() {
     if (!confirm("Stop training?")) return;
@@ -143,6 +145,52 @@ export default function MonitoringPage() {
       setSession(res.data);
     } catch (e) {
       alert("Failed to stop training");
+    }
+  }
+
+  function sleep(ms: number) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  async function waitUntilSessionInactive(sessionId: number, timeoutMs = 60000) {
+    const started = Date.now();
+    while (Date.now() - started < timeoutMs) {
+      const status = await trainingApi.getStatus(sessionId);
+      if (!status.data.is_active) return true;
+      await sleep(1000);
+    }
+    return false;
+  }
+
+  async function handleDelete() {
+    if (!session) return;
+
+    const title = session.name ?? `Session ${session.id}`;
+    const ask = session.status === "running"
+      ? `\"${title}\" 은(는) 현재 진행중입니다.\n중지 후 삭제할까요?`
+      : `\"${title}\" 을(를) 삭제할까요?`;
+
+    if (!confirm(ask)) return;
+
+    setDeleting(true);
+    try {
+      if (session.status === "running") {
+        await trainingApi.stopTraining(sid);
+        const inactive = await waitUntilSessionInactive(sid);
+        if (!inactive) {
+          alert("중지 대기 시간이 초과되었습니다. 잠시 후 다시 시도해주세요.");
+          return;
+        }
+      }
+
+      await trainingApi.deleteSession(sid);
+      alert("삭제되었습니다.");
+      navigate(`/projects/${pid}/training`);
+    } catch (e: unknown) {
+      const detail = axios.isAxiosError(e) ? e.response?.data?.detail : undefined;
+      alert(detail ?? "삭제 실패");
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -170,10 +218,13 @@ export default function MonitoringPage() {
         <Info label="Precision" value={session.final_precision != null ? `${(session.final_precision * 100).toFixed(1)}%` : "-"} />
         <Info label="Recall" value={session.final_recall != null ? `${(session.final_recall * 100).toFixed(1)}%` : "-"} />
         {isRunning && (
-          <button onClick={handleStop} style={{ ...btnStyle, background: "#dc2626", alignSelf: "center" }}>
+          <button onClick={handleStop} disabled={deleting} style={{ ...btnStyle, background: "#dc2626", alignSelf: "center", opacity: deleting ? 0.6 : 1 }}>
             Stop Training
           </button>
         )}
+        <button onClick={handleDelete} disabled={deleting} style={{ ...btnStyle, background: "#b91c1c", alignSelf: "center", opacity: deleting ? 0.6 : 1 }}>
+          Delete Session
+        </button>
       </div>
 
       {session.error_message && (
