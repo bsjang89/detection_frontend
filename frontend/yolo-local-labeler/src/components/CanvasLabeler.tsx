@@ -39,6 +39,11 @@ export default function CanvasLabeler({
   const [isDrawing, setIsDrawing] = useState(false);
   const [draft, setDraft] = useState<BoxAnno | null>(null);
 
+  // Ghost stamp: remembers last placed box size, follows cursor
+  const [lastSize, setLastSize] = useState<{ w: number; h: number; rotation: number } | null>(null);
+  const [ghostPos, setGhostPos] = useState<{ x: number; y: number } | null>(null);
+  const downPos = useRef<{ x: number; y: number } | null>(null);
+
   const imgW = img?.width ?? 0;
   const imgH = img?.height ?? 0;
 
@@ -126,52 +131,85 @@ useEffect(() => {
     const pos = stage.getPointerPosition();
     if (!pos) return;
 
+    const px = pos.x / scale;
+    const py = pos.y / scale;
+    downPos.current = { x: px, y: py };
+
     setIsDrawing(true);
     setDraft({
       id: uid(),
       classId: activeClassId,
-      cx: pos.x / scale,
-      cy: pos.y / scale,
+      cx: px,
+      cy: py,
       w: 1,
       h: 1,
       rotation: 0,
-      
-        startX: pos.x / scale,
-        startY: pos.y / scale,
+      startX: px,
+      startY: py,
     });
   }
 
- function handleMouseMove() {
-  if (!isDrawing || !draft) return;
+  function handleMouseMove() {
+    const stage = stageRef.current;
+    const pos = stage?.getPointerPosition();
+    if (!pos) return;
 
-  const stage = stageRef.current;
-  const pos = stage.getPointerPosition();
-  if (!pos) return;
+    const px = pos.x / scale;
+    const py = pos.y / scale;
 
-  const x2 = pos.x / scale;
-  const y2 = pos.y / scale;
+    // Update ghost position when not drawing
+    if (!isDrawing && lastSize) {
+      setGhostPos({ x: px, y: py });
+    }
 
-  const x1 = draft.startX!;
-  const y1 = draft.startY!;
+    if (!isDrawing || !draft) return;
 
-  const left = Math.min(x1, x2);
-  const right = Math.max(x1, x2);
-  const top = Math.min(y1, y2);
-  const bottom = Math.max(y1, y2);
+    const x1 = draft.startX!;
+    const y1 = draft.startY!;
 
-  setDraft({
-    ...draft,
-    cx: (left + right) / 2,
-    cy: (top + bottom) / 2,
-    w: Math.max(2, right - left),
-    h: Math.max(2, bottom - top),
-  });
-}
+    const left = Math.min(x1, px);
+    const right = Math.max(x1, px);
+    const top = Math.min(y1, py);
+    const bottom = Math.max(y1, py);
+
+    setDraft({
+      ...draft,
+      cx: (left + right) / 2,
+      cy: (top + bottom) / 2,
+      w: Math.max(2, right - left),
+      h: Math.max(2, bottom - top),
+    });
+  }
 
   function handleMouseUp() {
     if (!isDrawing || !draft) return;
-
     setIsDrawing(false);
+
+    const stage = stageRef.current;
+    const pos = stage?.getPointerPosition();
+    const px = pos ? pos.x / scale : draft.cx;
+    const py = pos ? pos.y / scale : draft.cy;
+
+    // Check if it was a click (small movement) vs drag
+    const dp = downPos.current;
+    const dist = dp ? Math.hypot(px - dp.x, py - dp.y) : 999;
+
+    if (dist < 5 && lastSize) {
+      // Stamp: place a copy of last box at click position
+      const stamped: BoxAnno = {
+        id: uid(),
+        classId: activeClassId,
+        cx: px,
+        cy: py,
+        w: lastSize.w,
+        h: lastSize.h,
+        rotation: lastSize.rotation,
+      };
+      setBoxes([...boxes, stamped]);
+      setSelectedId(stamped.id);
+      setDraft(null);
+      return;
+    }
 
     if (draft.w < 5 || draft.h < 5) {
       setDraft(null);
@@ -180,7 +218,8 @@ useEffect(() => {
 
     const { startX, startY, ...finalBox } = draft;
     setBoxes([...boxes, finalBox]);
-    setSelectedId(draft.id);
+    setSelectedId(finalBox.id);
+    setLastSize({ w: finalBox.w, h: finalBox.h, rotation: finalBox.rotation });
     setDraft(null);
   }
 
@@ -230,6 +269,7 @@ useEffect(() => {
 
       const newW = node.width() * scaleX;
       const newH = node.height() * scaleY;
+      const newRot = node.rotation();
 
       node.scaleX(1);
       node.scaleY(1);
@@ -239,23 +279,40 @@ useEffect(() => {
         cy: node.y() + newH / 2,
         w: newW,
         h: newH,
-        rotation: node.rotation(),
+        rotation: newRot,
       });
+      setLastSize({ w: newW, h: newH, rotation: newRot });
     }}
   />
 ))}
 
 
+          {/* Ghost stamp preview */}
+          {!isDrawing && lastSize && ghostPos && (
+            <Rect
+              x={ghostPos.x - lastSize.w / 2}
+              y={ghostPos.y - lastSize.h / 2}
+              width={lastSize.w}
+              height={lastSize.h}
+              rotation={lastSize.rotation}
+              stroke={CLASS_COLORS[activeClassId] ?? "white"}
+              strokeWidth={6}
+              dash={[6, 4]}
+              opacity={0.5}
+              listening={false}
+            />
+          )}
+
           {/* 드래그 중 박스 */}
           {draft && (
-  <Rect
-    {...rectProps(draft)}
-    stroke={CLASS_COLORS[draft.classId] ?? "yellow"}
-    strokeWidth={10}
-    dash={[8, 6]}
-    listening={false}
-  />
-)}
+            <Rect
+              {...rectProps(draft)}
+              stroke={CLASS_COLORS[draft.classId] ?? "yellow"}
+              strokeWidth={10}
+              dash={[8, 6]}
+              listening={false}
+            />
+          )}
 
           <Transformer
             ref={trRef}
