@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useCallback, useRef } from "react";
+﻿import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import CanvasLabeler, { type InferenceOverlay } from "../components/CanvasLabeler";
 import RoundedSelect from "../components/RoundedSelect";
@@ -27,6 +27,7 @@ export default function ProjectLabelingPage() {
   const [loading, setLoading] = useState(true);
 
   const [annos, setAnnos] = useState<AnnoMap>({});
+  const [annotationVersionByImage, setAnnotationVersionByImage] = useState<Record<number, number>>({});
   const [activeClassId, setActiveClassId] = useState(0);
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState<Set<number>>(new Set());
@@ -61,6 +62,9 @@ export default function ProjectLabelingPage() {
       ]);
       setProject(pRes.data);
       setImages(iRes.data);
+      setAnnotationVersionByImage(
+        Object.fromEntries(iRes.data.map((img) => [img.id, img.annotation_version ?? 0]))
+      );
       setClasses(cRes.data);
       if (cRes.data.length > 0) {
         // Backend annotation payload expects classes.id
@@ -94,6 +98,10 @@ export default function ProjectLabelingPage() {
       const res = await annotationsApi.getByImage(img.id);
       const boxes: BoxAnno[] = res.data.map((a) => apiToBox(a, img.width, img.height));
       setAnnos((prev) => ({ ...prev, [img.id]: boxes }));
+      setAnnotationVersionByImage((prev) => {
+        if (prev[img.id] !== undefined) return prev;
+        return { ...prev, [img.id]: img.annotation_version ?? 0 };
+      });
     } catch (e) {
       console.error("Failed to load annotations", e);
       setAnnos((prev) => ({ ...prev, [img.id]: [] }));
@@ -149,6 +157,44 @@ export default function ProjectLabelingPage() {
       return nextSet;
     });
   }, [currentId]);
+
+  function extractConflictVersion(error: unknown): number | null {
+    const maybeError = error as {
+      response?: { status?: number; data?: { detail?: unknown } };
+    };
+    if (maybeError?.response?.status !== 409) return null;
+    const detail = maybeError.response?.data?.detail;
+    if (
+      detail &&
+      typeof detail === "object" &&
+      "current_annotation_version" in detail &&
+      typeof (detail as { current_annotation_version?: unknown }).current_annotation_version === "number"
+    ) {
+      return (detail as { current_annotation_version: number }).current_annotation_version;
+    }
+    return 0;
+  }
+
+  const handleAnnotationConflict = useCallback(async (img: ImageInfo, serverVersion: number | null) => {
+    try {
+      const res = await annotationsApi.getByImage(img.id);
+      const boxes: BoxAnno[] = res.data.map((a) => apiToBox(a, img.width, img.height));
+      setAnnos((prev) => ({ ...prev, [img.id]: boxes }));
+      setDirty((prev) => {
+        if (!prev.has(img.id)) return prev;
+        const next = new Set(prev);
+        next.delete(img.id);
+        return next;
+      });
+    } catch (reloadErr) {
+      console.error("Failed to reload annotations after conflict", reloadErr);
+    } finally {
+      setAnnotationVersionByImage((prev) => ({
+        ...prev,
+        [img.id]: serverVersion ?? prev[img.id] ?? img.annotation_version ?? 0,
+      }));
+    }
+  }, []);
 
   const classByYoloIndex = useMemo(() => {
     const map = new Map<number, ApiClassDef>();
@@ -272,7 +318,7 @@ export default function ProjectLabelingPage() {
 
   async function handleRunInferenceCurrent() {
     if (!current || !selectedInferenceModelId) {
-      alert("모델과 이미지를 선택해 주세요.");
+      alert("紐⑤뜽怨??대?吏瑜??좏깮??二쇱꽭??");
       return;
     }
 
@@ -377,13 +423,22 @@ export default function ProjectLabelingPage() {
   // Save annotations for a specific image
   const saveImageAnnotations = useCallback(async (img: ImageInfo, boxesOverride?: BoxAnno[]) => {
     const boxes = boxesOverride ?? annos[img.id] ?? [];
-    await annotationsApi.batchSave(img.id, boxes.map((b) => boxToApi(b, img.width, img.height)));
+    const baseVersion = annotationVersionByImage[img.id] ?? img.annotation_version ?? 0;
+    const res = await annotationsApi.batchSave(
+      img.id,
+      boxes.map((b) => boxToApi(b, img.width, img.height)),
+      baseVersion
+    );
+    setAnnotationVersionByImage((prev) => ({
+      ...prev,
+      [img.id]: res.data.annotation_version,
+    }));
     setDirty((prev) => {
       const next = new Set(prev);
       next.delete(img.id);
       return next;
     });
-  }, [annos]);
+  }, [annos, annotationVersionByImage]);
 
   // Save current image annotations
   async function saveCurrentAnnotations() {
@@ -396,7 +451,13 @@ export default function ProjectLabelingPage() {
     try {
       await saveImageAnnotations(current, currentBoxes);
     } catch (e) {
-      alert("저장 실패");
+      const serverVersion = extractConflictVersion(e);
+      if (serverVersion !== null && current) {
+        await handleAnnotationConflict(current, serverVersion);
+        alert("Another user updated this image first. Reloaded latest labels. Please review and save again.");
+      } else {
+        alert("Save failed");
+      }
       console.error(e);
     } finally {
       setSaving(false);
@@ -414,13 +475,17 @@ export default function ProjectLabelingPage() {
         setSaving(true);
         await saveImageAnnotations(current, annos[current.id] ?? []);
       } catch (e) {
+        const serverVersion = extractConflictVersion(e);
+        if (serverVersion !== null) {
+          await handleAnnotationConflict(current, serverVersion);
+        }
         console.error("Auto-save failed", e);
       } finally {
         setSaving(false);
       }
     }
     setIdx(newIdx);
-  }, [current, dirty, annos, saveImageAnnotations]);
+  }, [current, dirty, annos, saveImageAnnotations, handleAnnotationConflict]);
 
   // Auto-save while editing current image (debounced)
   useEffect(() => {
@@ -436,6 +501,10 @@ export default function ProjectLabelingPage() {
         setSaving(true);
         await saveImageAnnotations(current, annos[current.id] ?? []);
       } catch (e) {
+        const serverVersion = extractConflictVersion(e);
+        if (serverVersion !== null) {
+          await handleAnnotationConflict(current, serverVersion);
+        }
         console.error("Auto-save while editing failed", e);
       } finally {
         setSaving(false);
@@ -448,8 +517,7 @@ export default function ProjectLabelingPage() {
         autoSaveTimerRef.current = null;
       }
     };
-  }, [current, dirty, annos, saveImageAnnotations]);
-
+  }, [current, dirty, annos, saveImageAnnotations, handleAnnotationConflict]);
   function prev() { if (idx > 0) saveAndGo(idx - 1); }
   function next() { if (idx < images.length - 1) saveAndGo(idx + 1); }
 
@@ -641,7 +709,7 @@ export default function ProjectLabelingPage() {
                 border: c.id === activeClassId ? "1px solid var(--line-strong)" : "1px solid var(--line)",
               }}
             >
-              <div style={{ width: 16, height: 16, borderRadius: 4, background: c.color ?? "#888", flexShrink: 0 }} />
+              <div style={{ width: 16, height: 16, borderRadius: 3, background: c.color ?? "#888", border: "1px solid rgba(255,255,255,0.6)", flexShrink: 0 }} />
               <span style={{ flex: 1, fontSize: 15, color: "#e5e5e5" }}>{c.class_name}</span>
               <span style={{ fontSize: 13, color: "#94a3b8" }}>{i + 1}</span>
             </div>
@@ -760,7 +828,7 @@ export default function ProjectLabelingPage() {
               const cls = classes.find((c) => c.id === b.classId);
               return (
                 <div key={b.id} style={{ fontSize: 14, color: "#e2e8f0", padding: "6px 8px", background: "rgba(15, 23, 42, 0.75)", borderRadius: 8, border: "1px solid var(--line)", display: "flex", gap: 6, alignItems: "center" }}>
-                  <div style={{ width: 10, height: 10, borderRadius: 2, background: cls?.color ?? "#888", flexShrink: 0 }} />
+                  <div style={{ width: 10, height: 10, borderRadius: 3, background: cls?.color ?? "#888", border: "1px solid rgba(255,255,255,0.55)", flexShrink: 0 }} />
                   <span style={{ flex: 1 }}>{cls?.class_name ?? `class_${b.classId}`}</span>
                   <span style={{ color: "#666" }}>{(b.rotation * 180 / Math.PI).toFixed(0)}&deg;</span>
                 </div>
@@ -910,4 +978,6 @@ const inputLikeStyle: React.CSSProperties = {
   padding: "8px 10px",
   fontSize: 14,
 };
+
+
 

@@ -1,5 +1,6 @@
-import { useEffect, useState, useRef, useCallback } from "react";
+﻿import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
+import { createPortal } from "react-dom";
 import { projectsApi } from "../api/projects";
 import { API_SERVER_URL } from "../api/client";
 import type { ProjectWithStats, ImageInfo, ClassDef, DuplicateMode } from "../api/projects";
@@ -147,14 +148,24 @@ export default function ProjectDetailPage() {
       setNewClassName("");
       await loadData();
     } catch (e) {
-      alert("클래스 추가 실패");
+      alert("?대옒??異붽? ?ㅽ뙣");
       console.error(e);
     }
   }
 
-  function thumbnailUrl(img: ImageInfo) {
-    const relativePath = (img.thumbnail_path ?? img.file_path).replace(/\\/g, "/");
-    return `${API_SERVER_URL}/${relativePath}`;
+  function imagePreviewUrls(img: ImageInfo): string[] {
+    const candidates = [img.thumbnail_path, img.viewer_path, img.file_path].filter(
+      (v): v is string => Boolean(v)
+    );
+    const seen = new Set<string>();
+    return candidates
+      .map((p) => p.replace(/\\/g, "/"))
+      .filter((p) => {
+        if (seen.has(p)) return false;
+        seen.add(p);
+        return true;
+      })
+      .map((p) => `${API_SERVER_URL}/${encodeURI(p)}`);
   }
 
   if (loading) return <div style={{ padding: 24, color: "#e5e5e5" }}>Loading...</div>;
@@ -173,10 +184,16 @@ export default function ProjectDetailPage() {
             <span style={{ fontSize: 14, fontWeight: 800, color: "var(--text-0)" }}>{project.task_type.toUpperCase()}</span>
           </div>
         </div>
-        <button onClick={() => navigate(`/projects/${pid}/labeling`)} style={{ ...btnStyle, background: "linear-gradient(135deg, #0ea5e9, #22d3ee)" }}>
+        <button
+          onClick={() => navigate(`/projects/${pid}/labeling`)}
+          style={{ ...btnStyle, background: "linear-gradient(135deg, #0ea5e9, #22d3ee)", minWidth: 132 }}
+        >
           Labeling
         </button>
-        <button onClick={() => navigate(`/projects/${pid}/training`)} style={{ ...btnStyle, background: "linear-gradient(135deg, #0284c7, #0ea5e9)" }}>
+        <button
+          onClick={() => navigate(`/projects/${pid}/training`)}
+          style={{ ...btnStyle, background: "linear-gradient(135deg, #0284c7, #0ea5e9)", minWidth: 132 }}
+        >
           Training
         </button>
       </div>
@@ -271,76 +288,129 @@ export default function ProjectDetailPage() {
           {images.length === 0 ? (
             <p style={{ color: "#888" }}>No images yet. Upload images to get started.</p>
           ) : (
-            <VirtualImageList images={images} thumbnailUrl={thumbnailUrl} />
+            <VirtualImageList images={images} imagePreviewUrls={imagePreviewUrls} />
           )}
         </section>
 
         {/* Right sidebar */}
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
           {/* Classes */}
-          <section style={cardStyle}>
-            <h3 style={{ margin: "0 0 12px", color: "#fff" }}>Classes ({classes.length})</h3>
+          <section style={{ ...cardStyle, padding: 18 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 10 }}>
+              <h3 style={{ margin: 0, color: "#fff", fontSize: 20 }}>Classes</h3>
+              <div style={{ fontSize: 13, fontWeight: 800, color: "#dbeafe", background: "rgba(37, 99, 235, 0.24)", border: "1px solid rgba(125, 211, 252, 0.4)", borderRadius: 999, padding: "4px 10px" }}>
+                {classes.length} items
+              </div>
+            </div>
+            <div style={{ fontSize: 13, color: "#94a3b8", marginBottom: 12 }}>
+              Training labels used in annotation and inference mapping.
+            </div>
 
-            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16 }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 14, maxHeight: 240, overflow: "auto", paddingRight: 2 }}>
               {classes.map((c) => (
-                <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: 8, background: "rgba(30, 41, 59, 0.55)", borderRadius: 8, border: "1px solid var(--line)" }}>
-                  <div style={{ width: 16, height: 16, borderRadius: 4, background: c.color ?? "#888", flexShrink: 0 }} />
-                  <span style={{ fontSize: 15, color: "#e5e5e5", flex: 1 }}>{c.class_name}</span>
-                  <span style={{ fontSize: 14, color: "#94a3b8" }}>ID: {c.class_id}</span>
+                <div
+                  key={c.id}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    padding: "10px 11px",
+                    background: "linear-gradient(180deg, rgba(30, 41, 59, 0.72), rgba(15, 23, 42, 0.72))",
+                    borderRadius: 12,
+                    border: "1px solid rgba(125, 211, 252, 0.25)",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: 20,
+                      height: 20,
+                      borderRadius: 3,
+                      background: c.color ?? "#888",
+                      border: "1px solid rgba(255,255,255,0.72)",
+                      boxShadow: "inset 0 0 0 1px rgba(2,8,23,0.25)",
+                      flexShrink: 0,
+                    }}
+                  />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 15, color: "#e5e7eb", fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {c.class_name}
+                    </div>
+                    <div style={{ fontSize: 12, color: "#93c5fd" }}>Class ID: {c.class_id}</div>
+                  </div>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: "#cffafe", background: "rgba(8, 47, 73, 0.75)", border: "1px solid rgba(125, 211, 252, 0.35)", borderRadius: 999, padding: "4px 8px" }}>
+                    #{c.class_id}
+                  </div>
                 </div>
               ))}
               {classes.length === 0 && (
-                <p style={{ color: "#888", fontSize: 15 }}>No classes defined yet.</p>
+                <div style={{ border: "1px dashed rgba(148, 163, 184, 0.35)", borderRadius: 12, padding: 12, color: "#94a3b8", fontSize: 14 }}>
+                  No classes defined yet.
+                </div>
               )}
             </div>
 
             <div style={{ borderTop: "1px solid var(--line)", paddingTop: 12 }}>
-              <div style={{ display: "flex", gap: 6 }}>
+              <div style={{ fontSize: 12, color: "#93c5fd", marginBottom: 8, fontWeight: 700 }}>Add New Class</div>
+              <div style={{ display: "flex", gap: 8 }}>
                 <input
                   value={newClassName}
                   onChange={(e) => setNewClassName(e.target.value)}
-                  placeholder="Class name"
-                  style={{ ...inputStyle, flex: 1 }}
+                  placeholder="Class name (e.g. Tote, NG)"
+                  style={{ ...inputStyle, flex: 1, fontSize: 15, padding: "10px 12px" }}
                   onKeyDown={(e) => e.key === "Enter" && handleAddClass()}
                 />
-                <input
-                  type="color"
-                  value={newClassColor}
-                  onChange={(e) => setNewClassColor(e.target.value)}
-                  style={{ width: 36, height: 32, border: "none", cursor: "pointer", borderRadius: 4 }}
-                />
+                <label
+                  title="Class color"
+                  style={{
+                    position: "relative",
+                    width: 46,
+                    height: 46,
+                    borderRadius: 14,
+                    border: "1px solid rgba(125, 211, 252, 0.38)",
+                    background: "linear-gradient(180deg, rgba(15, 23, 42, 0.95), rgba(8, 15, 30, 0.95))",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    cursor: "pointer",
+                    boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.06)",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: 30,
+                      height: 30,
+                      borderRadius: 3,
+                      border: "1px solid rgba(255,255,255,0.72)",
+                      boxShadow: "inset 0 0 0 1px rgba(2,8,23,0.25)",
+                      background: newClassColor,
+                    }}
+                  />
+                  <input
+                    type="color"
+                    value={newClassColor}
+                    onChange={(e) => setNewClassColor(e.target.value)}
+                    style={{
+                      position: "absolute",
+                      inset: 0,
+                      width: "100%",
+                      height: "100%",
+                      opacity: 0,
+                      border: "none",
+                      padding: 0,
+                      cursor: "pointer",
+                    }}
+                  />
+                </label>
               </div>
-              <button onClick={handleAddClass} style={{ ...btnStyle, background: "linear-gradient(135deg, #10b981, #34d399)", width: "100%", marginTop: 8 }}>
+              <button onClick={handleAddClass} style={{ ...btnStyle, background: "linear-gradient(135deg, #0891b2, #10b981)", width: "100%", marginTop: 9 }}>
                 + Add Class
               </button>
             </div>
           </section>
-
-          {/* Labeling Guide */}
-          <section style={cardStyle}>
-            <h3 style={{ margin: "0 0 8px", color: "#fff" }}>Labeling</h3>
-            <p style={{ fontSize: 15, color: "#aaa", lineHeight: 1.6, margin: "0 0 12px" }}>
-              이미지를 업로드한 뒤 레이블링을 시작하세요.
-              어노테이션은 서버에 자동 저장됩니다.
-            </p>
-            <button
-              onClick={() => navigate(`/projects/${pid}/labeling`)}
-              style={{ ...btnStyle, background: "linear-gradient(135deg, #0284c7, #22d3ee)", width: "100%" }}
-            >
-              Open Labeler
-            </button>
-          </section>
-
           {/* Quick Actions */}
           <section style={cardStyle}>
             <h3 style={{ margin: "0 0 8px", color: "#fff" }}>Actions</h3>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              <button
-                onClick={() => navigate(`/projects/${pid}/training`)}
-                style={{ ...btnStyle, background: "linear-gradient(135deg, #0284c7, #0ea5e9)", width: "100%" }}
-              >
-                Training
-              </button>
               <button
                 onClick={() => navigate("/compare")}
                 style={{ ...btnStyle, background: "linear-gradient(135deg, #2563eb, #0ea5e9)", width: "100%" }}
@@ -361,60 +431,104 @@ export default function ProjectDetailPage() {
   );
 }
 
-const ITEM_HEIGHT = 64;
 const LIST_HEIGHT = 600;
-const OVERSCAN = 5;
 
-function VirtualImageList({ images, thumbnailUrl }: { images: ImageInfo[]; thumbnailUrl: (img: ImageInfo) => string }) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [scrollTop, setScrollTop] = useState(0);
+function VirtualImageList({
+  images,
+  imagePreviewUrls,
+}: {
+  images: ImageInfo[];
+  imagePreviewUrls: (img: ImageInfo) => string[];
+}) {
   const [hoveredImageId, setHoveredImageId] = useState<number | null>(null);
+  const [imageUrlFallbackIndexById, setImageUrlFallbackIndexById] = useState<Record<number, number>>({});
+  const [hoverPreview, setHoverPreview] = useState<{
+    image: ImageInfo;
+    x: number;
+    y: number;
+  } | null>(null);
 
-  const totalHeight = images.length * ITEM_HEIGHT;
-  const startIdx = Math.max(0, Math.floor(scrollTop / ITEM_HEIGHT) - OVERSCAN);
-  const endIdx = Math.min(images.length, Math.ceil((scrollTop + LIST_HEIGHT) / ITEM_HEIGHT) + OVERSCAN);
-  const offsetY = startIdx * ITEM_HEIGHT;
-
-  const handleScroll = useCallback(() => {
-    if (containerRef.current) {
-      setScrollTop(containerRef.current.scrollTop);
-    }
+  const handleHoverMove = useCallback((event: React.MouseEvent<HTMLDivElement>, image: ImageInfo) => {
+    setHoverPreview({
+      image,
+      x: event.clientX,
+      y: event.clientY,
+    });
   }, []);
 
+  const previewSize = 220;
+  const previewHeight = 148;
+  const viewportWidth = typeof window !== "undefined" ? window.innerWidth : 1920;
+  const viewportHeight = typeof window !== "undefined" ? window.innerHeight : 1080;
+  const cursorGap = 14;
+  let previewLeft = 0;
+  let previewTop = 0;
+  if (hoverPreview) {
+    previewLeft = hoverPreview.x + cursorGap;
+    previewTop = hoverPreview.y + cursorGap;
+
+    if (previewLeft + previewSize + 10 > viewportWidth) {
+      previewLeft = hoverPreview.x - previewSize - cursorGap;
+    }
+    if (previewTop + previewHeight + 10 > viewportHeight) {
+      previewTop = hoverPreview.y - previewHeight - cursorGap;
+    }
+
+    previewLeft = Math.min(viewportWidth - previewSize - 10, Math.max(10, previewLeft));
+    previewTop = Math.min(viewportHeight - previewHeight - 10, Math.max(10, previewTop));
+  }
+
   return (
-    <div
-      ref={containerRef}
-      onScroll={handleScroll}
-      style={{ height: LIST_HEIGHT, overflow: "auto" }}
-    >
-      <div style={{ height: totalHeight, position: "relative" }}>
-        <div style={{ position: "absolute", top: offsetY, left: 0, right: 0 }}>
-          {images.slice(startIdx, endIdx).map((img) => {
-            const isHovered = hoveredImageId === img.id;
-            return (
-              <div
-                key={img.id}
-                onMouseEnter={() => setHoveredImageId(img.id)}
-                onMouseLeave={() => setHoveredImageId((prev) => (prev === img.id ? null : prev))}
-                style={{
-                  height: ITEM_HEIGHT,
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 12,
-                  padding: "8px 6px",
-                  borderBottom: "1px solid var(--line)",
-                  borderRadius: 10,
-                  background: isHovered ? "rgba(14, 165, 233, 0.11)" : "transparent",
-                  border: isHovered ? "1px solid var(--line-strong)" : "1px solid transparent",
-                  position: "relative",
-                  zIndex: isHovered ? 20 : 1,
-                  transition: "background 0.16s ease, border-color 0.16s ease",
-                }}
-              >
-                <div style={{ width: 64, height: 48, position: "relative", flexShrink: 0 }}>
+    <>
+      <div
+        style={{ height: LIST_HEIGHT, overflow: "auto", overflowX: "visible", position: "relative", zIndex: 1 }}
+      >
+        {images.map((img) => {
+          const isHovered = hoveredImageId === img.id;
+          const urls = imagePreviewUrls(img);
+          const fallbackIndex = imageUrlFallbackIndexById[img.id] ?? 0;
+          const resolvedIndex = Math.min(fallbackIndex, Math.max(0, urls.length - 1));
+          const currentUrl = urls[resolvedIndex] ?? "";
+          return (
+            <div
+              key={img.id}
+              onMouseEnter={(e) => {
+                setHoveredImageId(img.id);
+                handleHoverMove(e, img);
+              }}
+              onMouseMove={(e) => handleHoverMove(e, img)}
+              onMouseLeave={() => {
+                setHoveredImageId((prev) => (prev === img.id ? null : prev));
+                setHoverPreview((prev) => (prev?.image.id === img.id ? null : prev));
+              }}
+              style={{
+                minHeight: 68,
+                display: "flex",
+                alignItems: "center",
+                gap: 12,
+                padding: "8px 6px",
+                borderBottom: "1px solid var(--line)",
+                borderRadius: 10,
+                background: isHovered ? "rgba(14, 165, 233, 0.11)" : "transparent",
+                border: isHovered ? "1px solid var(--line-strong)" : "1px solid transparent",
+                boxSizing: "border-box",
+                position: "relative",
+                zIndex: isHovered ? 2 : 1,
+                transition: "background 0.16s ease, border-color 0.16s ease",
+              }}
+            >
+              <div style={{ width: 64, height: 48, position: "relative", flexShrink: 0 }}>
+                {currentUrl ? (
                   <img
-                    src={thumbnailUrl(img)}
+                    src={currentUrl}
                     alt={img.filename}
+                    onError={() => {
+                      setImageUrlFallbackIndexById((prev) => {
+                        const cur = prev[img.id] ?? 0;
+                        if (cur >= urls.length - 1) return prev;
+                        return { ...prev, [img.id]: cur + 1 };
+                      });
+                    }}
                     style={{
                       width: 64,
                       height: 48,
@@ -429,66 +543,90 @@ function VirtualImageList({ images, thumbnailUrl }: { images: ImageInfo[]; thumb
                     }}
                     loading="lazy"
                   />
-                </div>
-
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{
-                    fontSize: 15,
-                    color: "#e5e5e5",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                    fontWeight: isHovered ? 700 : 600,
-                  }}>
-                    {img.filename}
-                  </div>
-                  <div style={{ fontSize: 14, color: "#94a3b8" }}>
-                    {img.width}x{img.height} &middot; {img.annotation_count} annotations
-                  </div>
-                </div>
-                <span style={splitBadge(img.split_type)}>{img.split_type}</span>
-
-                {isHovered && (
+                ) : (
                   <div
                     style={{
-                      position: "absolute",
-                      left: 78,
-                      top: -26,
-                      width: 220,
-                      pointerEvents: "none",
-                      background: "rgba(7, 13, 26, 0.95)",
-                      border: "1px solid var(--line-strong)",
-                      borderRadius: 12,
-                      padding: 8,
-                      boxShadow: "0 18px 38px rgba(2, 8, 23, 0.55)",
-                      backdropFilter: "blur(4px)",
+                      width: 64,
+                      height: 48,
+                      borderRadius: 6,
+                      border: "1px dashed rgba(148, 163, 184, 0.45)",
+                      background: "rgba(15, 23, 42, 0.65)",
                     }}
-                  >
-                    <img
-                      src={thumbnailUrl(img)}
-                      alt={`${img.filename} preview`}
-                      style={{ width: "100%", height: 132, objectFit: "cover", borderRadius: 8, display: "block" }}
-                    />
-                    <div
-                      style={{
-                        marginTop: 6,
-                        fontSize: 12,
-                        color: "var(--text-1)",
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      Hover Preview
-                    </div>
-                  </div>
+                  />
                 )}
               </div>
-            );
-          })}
-        </div>
+
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{
+                  fontSize: 15,
+                  color: "#e5e5e5",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                  fontWeight: isHovered ? 700 : 600,
+                }}>
+                  {img.filename}
+                </div>
+                <div style={{ fontSize: 14, color: "#94a3b8" }}>
+                  {img.width}x{img.height} &middot; {img.annotation_count} annotations
+                </div>
+              </div>
+              <span style={splitBadge(img.split_type)}>{img.split_type}</span>
+            </div>
+          );
+        })}
       </div>
-    </div>
+      {hoverPreview && typeof document !== "undefined" && createPortal(
+        <div
+          style={{
+            position: "fixed",
+            left: previewLeft,
+            top: previewTop,
+            width: previewSize,
+            pointerEvents: "none",
+            background: "rgba(7, 13, 26, 0.96)",
+            border: "1px solid var(--line-strong)",
+            borderRadius: 12,
+            padding: 8,
+            boxShadow: "0 18px 38px rgba(2, 8, 23, 0.55)",
+            backdropFilter: "blur(4px)",
+            zIndex: 9999,
+          }}
+        >
+          {(() => {
+            const previewUrls = imagePreviewUrls(hoverPreview.image);
+            const previewFallbackIndex = imageUrlFallbackIndexById[hoverPreview.image.id] ?? 0;
+            const previewResolvedIndex = Math.min(previewFallbackIndex, Math.max(0, previewUrls.length - 1));
+            const previewUrl = previewUrls[previewResolvedIndex] ?? "";
+            return previewUrl ? (
+              <img
+                src={previewUrl}
+                alt={`${hoverPreview.image.filename} preview`}
+                onError={() => {
+                  setImageUrlFallbackIndexById((prev) => {
+                    const cur = prev[hoverPreview.image.id] ?? 0;
+                    if (cur >= previewUrls.length - 1) return prev;
+                    return { ...prev, [hoverPreview.image.id]: cur + 1 };
+                  });
+                }}
+                style={{ width: "100%", height: 132, objectFit: "cover", borderRadius: 8, display: "block" }}
+              />
+            ) : (
+              <div
+                style={{
+                  width: "100%",
+                  height: 132,
+                  borderRadius: 8,
+                  border: "1px dashed rgba(148, 163, 184, 0.45)",
+                  background: "rgba(15, 23, 42, 0.7)",
+                }}
+              />
+            );
+          })()}
+        </div>,
+        document.body
+        )}
+    </>
   );
 }
 
@@ -555,4 +693,10 @@ const cardStyle: React.CSSProperties = {
   boxShadow: "var(--shadow-1)",
   backdropFilter: "blur(6px)",
 };
+
+
+
+
+
+
 

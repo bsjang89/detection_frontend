@@ -50,6 +50,7 @@ export interface ImageInfo {
   width: number;
   height: number;
   split_type: string;
+  annotation_version: number;
   uploaded_at: string;
   annotation_count: number;
 }

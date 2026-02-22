@@ -29,6 +29,7 @@ interface LivePoint {
   precision?: number | null;
   recall?: number | null;
   learning_rate?: number | null;
+  logged_at?: string;
 }
 
 export default function MonitoringPage() {
@@ -41,6 +42,7 @@ export default function MonitoringPage() {
   const [metricsData, setMetricsData] = useState<LivePoint[]>([]);
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState(false);
+  const [nowMs, setNowMs] = useState(Date.now());
 
   // Load session and historical metrics
   useEffect(() => {
@@ -69,6 +71,7 @@ export default function MonitoringPage() {
           precision: m.precision,
           recall: m.recall,
           learning_rate: m.learning_rate,
+          logged_at: m.logged_at,
         }));
         setMetricsData(points);
       }
@@ -85,6 +88,7 @@ export default function MonitoringPage() {
       const point: LivePoint = {
         epoch: msg.epoch ?? 0,
         ...msg.metrics,
+        logged_at: new Date().toISOString(),
       };
       setMetricsData((prev) => [...prev, point]);
 
@@ -130,12 +134,19 @@ export default function MonitoringPage() {
             precision: m.precision,
             recall: m.recall,
             learning_rate: m.learning_rate,
+            logged_at: m.logged_at,
           }))
         );
       } catch { /* ignore */ }
     }, 5000);
     return () => clearInterval(interval);
   }, [isRunning, sid]);
+
+  // Tick clock for elapsed/ETA rendering.
+  useEffect(() => {
+    const timer = setInterval(() => setNowMs(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   async function handleStop() {
     if (!confirm("Stop training?")) return;
@@ -197,6 +208,46 @@ export default function MonitoringPage() {
   if (loading) return <div style={{ padding: 24 }}>Loading...</div>;
   if (!session) return <div style={{ padding: 24 }}>Session not found</div>;
 
+  const rawStartedAtMs = session.started_at ? new Date(session.started_at).getTime() : null;
+  const createdAtMs = session.created_at ? new Date(session.created_at).getTime() : null;
+  // Legacy data guard: old rows may have started_at recorded 9h earlier than created_at due naive UTC writes.
+  const startedAtMs = rawStartedAtMs != null && createdAtMs != null
+    ? Math.max(rawStartedAtMs, createdAtMs)
+    : (rawStartedAtMs ?? createdAtMs);
+  const endedAtMs = session.completed_at ? new Date(session.completed_at).getTime() : null;
+
+  const elapsedSecondsByStart = startedAtMs
+    ? Math.max(
+      0,
+      Math.floor(((endedAtMs ?? nowMs) - startedAtMs) / 1000)
+    )
+    : null;
+
+  const epochTimeMs = metricsData
+    .map((p) => (p.logged_at ? new Date(p.logged_at).getTime() : null))
+    .filter((v): v is number => Number.isFinite(v))
+    .sort((a, b) => a - b);
+  let avgEpochSeconds: number | null = null;
+  if (epochTimeMs.length >= 2) {
+    const totalSpan = epochTimeMs[epochTimeMs.length - 1] - epochTimeMs[0];
+    const epochSteps = Math.max(1, epochTimeMs.length - 1);
+    avgEpochSeconds = Math.max(1, totalSpan / 1000 / epochSteps);
+  } else if (epochTimeMs.length === 1 && elapsedSecondsByStart !== null) {
+    avgEpochSeconds = Math.max(1, elapsedSecondsByStart);
+  }
+
+  const totalEpochs = Number((session.config as Record<string, unknown>).epochs ?? 0);
+  const completedEpochsByProgress = totalEpochs > 0 ? Math.floor((session.progress / 100) * totalEpochs) : 0;
+  const completedEpochs = Math.max(metricsData.length, completedEpochsByProgress);
+  const remainingEpochs = totalEpochs > 0 ? Math.max(0, totalEpochs - completedEpochs) : 0;
+
+  const elapsedSeconds = avgEpochSeconds !== null && completedEpochs > 0
+    ? Math.floor(avgEpochSeconds * completedEpochs)
+    : elapsedSecondsByStart;
+  const etaSeconds = (isRunning && avgEpochSeconds !== null && remainingEpochs > 0)
+    ? Math.floor(avgEpochSeconds * remainingEpochs)
+    : null;
+
   return (
     <div className="page-shell" style={{ maxWidth: 1260 }}>
       {/* Header */}
@@ -213,6 +264,8 @@ export default function MonitoringPage() {
       <div style={{ ...cardStyle, display: "flex", gap: 24, marginBottom: 16, flexWrap: "wrap" }}>
         <Info label="Model" value={session.model_type} />
         <Info label="Progress" value={`${session.progress.toFixed(1)}%`} />
+        <Info label="Elapsed" value={formatDuration(elapsedSeconds)} />
+        <Info label="ETA" value={isRunning ? formatDuration(etaSeconds, "Calculating...") : "-"} />
         <Info label="mAP50" value={session.final_map50 != null ? `${(session.final_map50 * 100).toFixed(1)}%` : "-"} />
         <Info label="mAP50-95" value={session.final_map50_95 != null ? `${(session.final_map50_95 * 100).toFixed(1)}%` : "-"} />
         <Info label="Precision" value={session.final_precision != null ? `${(session.final_precision * 100).toFixed(1)}%` : "-"} />
@@ -311,6 +364,18 @@ function Info({ label, value }: { label: string; value: string }) {
       <div style={{ fontWeight: 600, fontSize: 16, color: "#e5e5e5" }}>{value}</div>
     </div>
   );
+}
+
+function formatDuration(totalSeconds: number | null, empty = "-"): string {
+  if (totalSeconds == null || !Number.isFinite(totalSeconds)) return empty;
+  const s = Math.max(0, Math.floor(totalSeconds));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+
+  if (h > 0) return `${h}h ${m}m ${sec}s`;
+  if (m > 0) return `${m}m ${sec}s`;
+  return `${sec}s`;
 }
 
 function StatusBadge({ status }: { status: string }) {

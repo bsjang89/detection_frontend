@@ -22,13 +22,23 @@ export interface AnnotationResponse extends AnnotationBase {
   updated_at: string | null;
 }
 
+export interface AnnotationBatchSaveResponse {
+  annotations: AnnotationResponse[];
+  annotation_version: number;
+}
+
 export const annotationsApi = {
   getByImage: (imageId: number) =>
     client.get<AnnotationResponse[]>(`/annotations/image/${imageId}`),
 
-  batchSave: (imageId: number, annotations: AnnotationBase[]) =>
-    client.post<AnnotationResponse[]>("/annotations/batch", {
+  batchSave: (
+    imageId: number,
+    annotations: AnnotationBase[],
+    baseAnnotationVersion?: number
+  ) =>
+    client.post<AnnotationBatchSaveResponse>("/annotations/batch", {
       image_id: imageId,
+      base_annotation_version: baseAnnotationVersion,
       annotations,
     }),
 };
