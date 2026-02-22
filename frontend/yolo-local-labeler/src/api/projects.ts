@@ -53,6 +53,20 @@ export interface ImageInfo {
   annotation_count: number;
 }
 
+export type DuplicateMode = "skip" | "rename";
+
+export interface UploadImageResult {
+  id: number | null;
+  filename: string;
+  file_path?: string;
+  thumbnail_path?: string;
+  width?: number;
+  height?: number;
+  status?: "uploaded" | "skipped";
+  reason?: string | null;
+  renamed_from?: string | null;
+}
+
 export const projectsApi = {
   list: () => client.get<ProjectWithStats[]>("/projects/"),
 
@@ -65,10 +79,16 @@ export const projectsApi = {
 
   delete: (id: number) => client.delete(`/projects/${id}`),
 
-  uploadImages: (projectId: number, files: File[], onProgress?: (percent: number) => void) => {
+  uploadImages: (
+    projectId: number,
+    files: File[],
+    onProgress?: (percent: number) => void,
+    duplicateMode: DuplicateMode = "rename"
+  ) => {
     const formData = new FormData();
     files.forEach((f) => formData.append("files", f));
-    return client.post(`/projects/${projectId}/images/upload`, formData, {
+    return client.post<UploadImageResult[]>(`/projects/${projectId}/images/upload`, formData, {
+      params: { duplicate_mode: duplicateMode },
       headers: { "Content-Type": "multipart/form-data" },
       timeout: 300000,
       onUploadProgress: (e) => {

@@ -2,7 +2,7 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { projectsApi } from "../api/projects";
 import { API_SERVER_URL } from "../api/client";
-import type { ProjectWithStats, ImageInfo, ClassDef } from "../api/projects";
+import type { ProjectWithStats, ImageInfo, ClassDef, DuplicateMode } from "../api/projects";
 
 export default function ProjectDetailPage() {
   const { projectId } = useParams<{ projectId: string }>();
@@ -49,18 +49,40 @@ export default function ProjectDetailPage() {
   async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const files = e.target.files;
     if (!files || files.length === 0) return;
+    const selectedFiles = Array.from(files);
+
+    const existingNames = new Set(images.map((img) => img.filename.toLowerCase()));
+    const duplicateCount = selectedFiles.filter((f) => existingNames.has(f.name.toLowerCase())).length;
+    let duplicateMode: DuplicateMode = "rename";
+
+    if (duplicateCount > 0) {
+      const choice = window.prompt(`Same filename detected (${duplicateCount} files).\n1: Skip duplicates\n2: Rename and upload (name(1).ext)\nEnter 1 or 2`, "2");
+      if (choice === null) {
+        if (fileInputRef.current) fileInputRef.current.value = "";
+        return;
+      }
+      duplicateMode = choice.trim() === "1" ? "skip" : "rename";
+    }
 
     setUploading(true);
     setUploadProgress(0);
-    setUploadTotal(files.length);
+    setUploadTotal(selectedFiles.length);
 
     try {
-      await projectsApi.uploadImages(pid, Array.from(files), (progress) => {
+      const uploadRes = await projectsApi.uploadImages(pid, selectedFiles, (progress) => {
         setUploadProgress(progress);
-      });
+      }, duplicateMode);
+
+      const uploadedCount = uploadRes.data.filter((r) => (r.status ?? "uploaded") === "uploaded").length;
+      const skippedCount = uploadRes.data.filter((r) => r.status === "skipped").length;
+      const renamedCount = uploadRes.data.filter((r) => !!r.renamed_from).length;
+
       await loadData();
+      if (duplicateCount > 0 || skippedCount > 0 || renamedCount > 0) {
+        alert(`Upload complete\nUploaded: ${uploadedCount}\nRenamed: ${renamedCount}\nSkipped: ${skippedCount}`);
+      }
     } catch (err) {
-      alert("업로드 실패");
+      alert("Upload failed");
       console.error(err);
     } finally {
       setUploading(false);
@@ -226,7 +248,7 @@ export default function ProjectDetailPage() {
           <section style={cardStyle}>
             <h3 style={{ margin: "0 0 8px", color: "#fff" }}>Labeling</h3>
             <p style={{ fontSize: 15, color: "#aaa", lineHeight: 1.6, margin: "0 0 12px" }}>
-              이미지를 업로드한 후 레이블링을 시작하세요.
+              이미지를 업로드한 뒤 레이블링을 시작하세요.
               어노테이션은 서버에 자동 저장됩니다.
             </p>
             <button
@@ -363,3 +385,4 @@ function splitBadge(split: string): React.CSSProperties {
 const btnStyle: React.CSSProperties = { padding: "10px 18px", borderRadius: 8, border: "none", background: "#333", color: "#fff", cursor: "pointer", fontSize: 16, fontWeight: 500 };
 const inputStyle: React.CSSProperties = { padding: "10px 14px", borderRadius: 8, border: "1px solid #444", background: "#1a1a1a", color: "#fff", fontSize: 16 };
 const cardStyle: React.CSSProperties = { background: "#1a1a1a", borderRadius: 12, padding: 24, border: "1px solid #2a2a2a" };
+

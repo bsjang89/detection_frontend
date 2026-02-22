@@ -1,12 +1,15 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import CanvasLabeler from "../components/CanvasLabeler";
+import CanvasLabeler, { type InferenceOverlay } from "../components/CanvasLabeler";
 import { projectsApi } from "../api/projects";
 import { annotationsApi } from "../api/annotations";
+import { inferenceApi } from "../api/inference";
+import { trainingApi } from "../api/training";
 import { API_SERVER_URL } from "../api/client";
 import type { ProjectWithStats, ImageInfo, ClassDef as ApiClassDef } from "../api/projects";
 import type { AnnotationResponse } from "../api/annotations";
 import type { BoxAnno } from "../types";
+import type { Detection, ModelInfo } from "../api/inference";
 
 type AnnoMap = Record<number, BoxAnno[]>; // imageId -> boxes
 const AUTO_SAVE_DEBOUNCE_MS = 800;
@@ -27,9 +30,19 @@ export default function ProjectLabelingPage() {
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState<Set<number>>(new Set());
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [inferenceModels, setInferenceModels] = useState<ModelInfo[]>([]);
+  const [selectedInferenceModelId, setSelectedInferenceModelId] = useState<number | "">("");
+  const [inferenceConf, setInferenceConf] = useState(0.25);
+  const [inferenceIou, setInferenceIou] = useState(0.7);
+  const [inferenceByImage, setInferenceByImage] = useState<Record<number, InferenceOverlay[]>>({});
+  const [showInferenceOverlay, setShowInferenceOverlay] = useState(true);
+  const [inferencing, setInferencing] = useState(false);
+  const [inferenceProgress, setInferenceProgress] = useState<{ done: number; total: number } | null>(null);
+  const [inferAllBatchSize, setInferAllBatchSize] = useState<5 | 10>(10);
 
   const current = images[idx] ?? null;
   const currentBoxes = current ? annos[current.id] ?? [] : [];
+  const currentInferenceBoxes = current ? inferenceByImage[current.id] ?? [] : [];
 
   // Load project, images, classes
   useEffect(() => {
@@ -51,6 +64,15 @@ export default function ProjectLabelingPage() {
         // Backend annotation payload expects classes.id
         setActiveClassId(cRes.data[0].id);
       }
+
+      const [sessionRes, modelRes] = await Promise.all([
+        trainingApi.listProjectSessions(pid),
+        inferenceApi.listModels(),
+      ]);
+      const sessionIds = new Set(sessionRes.data.map((s) => s.id));
+      const projectModels = modelRes.data.filter((m) => sessionIds.has(m.training_session_id));
+      setInferenceModels(projectModels);
+      if (projectModels.length > 0) setSelectedInferenceModelId(projectModels[0].id);
     } catch (e) {
       console.error(e);
     } finally {
@@ -119,6 +141,230 @@ export default function ProjectLabelingPage() {
       return { ...m, [current.id]: nextBoxes };
     });
     setDirty((prev) => new Set(prev).add(current.id));
+  }
+
+  const classByYoloIndex = useMemo(() => {
+    const map = new Map<number, ApiClassDef>();
+    for (const c of classes) map.set(c.class_id, c);
+    return map;
+  }, [classes]);
+
+  function obbToBox(obb: number[]): Pick<BoxAnno, "cx" | "cy" | "w" | "h" | "rotation"> {
+    const pts = [];
+    for (let i = 0; i < obb.length; i += 2) pts.push({ x: obb[i], y: obb[i + 1] });
+    const cx = pts.reduce((s, p) => s + p.x, 0) / 4;
+    const cy = pts.reduce((s, p) => s + p.y, 0) / 4;
+
+    let bestA = pts[0];
+    let bestB = pts[1];
+    let maxLen = -1;
+    for (let i = 0; i < 4; i++) {
+      const a = pts[i];
+      const b = pts[(i + 1) % 4];
+      const len = Math.hypot(b.x - a.x, b.y - a.y);
+      if (len > maxLen) {
+        maxLen = len;
+        bestA = a;
+        bestB = b;
+      }
+    }
+
+    let rotation = Math.atan2(bestB.y - bestA.y, bestB.x - bestA.x);
+    while (rotation > Math.PI) rotation -= 2 * Math.PI;
+    while (rotation < -Math.PI) rotation += 2 * Math.PI;
+
+    const cos = Math.cos(-rotation);
+    const sin = Math.sin(-rotation);
+    const rotated = pts.map((p) => {
+      const dx = p.x - cx;
+      const dy = p.y - cy;
+      return {
+        x: dx * cos - dy * sin,
+        y: dx * sin + dy * cos,
+      };
+    });
+
+    const minX = Math.min(...rotated.map((p) => p.x));
+    const maxX = Math.max(...rotated.map((p) => p.x));
+    const minY = Math.min(...rotated.map((p) => p.y));
+    const maxY = Math.max(...rotated.map((p) => p.y));
+
+    return {
+      cx,
+      cy,
+      w: Math.max(1, maxX - minX),
+      h: Math.max(1, maxY - minY),
+      rotation,
+    };
+  }
+
+  function detectionToOverlay(det: Detection, imageId: number, i: number): InferenceOverlay | null {
+    const classRow = classByYoloIndex.get(det.class_id);
+
+    if (det.bbox && det.bbox.length === 4) {
+      const [x1, y1, x2, y2] = det.bbox;
+      return {
+        id: `inf-${imageId}-${i}`,
+        cx: (x1 + x2) / 2,
+        cy: (y1 + y2) / 2,
+        w: Math.max(1, Math.abs(x2 - x1)),
+        h: Math.max(1, Math.abs(y2 - y1)),
+        rotation: 0,
+        classId: classRow?.id,
+        classIndex: det.class_id,
+        className: classRow?.class_name ?? `class_${det.class_id}`,
+        confidence: det.confidence,
+        canConvert: !!classRow,
+      };
+    }
+
+    if (det.obb && det.obb.length === 8) {
+      const box = obbToBox(det.obb);
+      return {
+        id: `inf-${imageId}-${i}`,
+        ...box,
+        classId: classRow?.id,
+        classIndex: det.class_id,
+        className: classRow?.class_name ?? `class_${det.class_id}`,
+        confidence: det.confidence,
+        canConvert: !!classRow,
+      };
+    }
+
+    return null;
+  }
+
+  function toLabelBox(overlay: InferenceOverlay): BoxAnno | null {
+    if (!overlay.classId) return null;
+    return {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      classId: overlay.classId,
+      cx: overlay.cx,
+      cy: overlay.cy,
+      w: overlay.w,
+      h: overlay.h,
+      rotation: overlay.rotation,
+    };
+  }
+
+  async function runInferenceForImage(img: ImageInfo): Promise<InferenceOverlay[]> {
+    if (!selectedInferenceModelId) return [];
+    const res = await inferenceApi.predict({
+      model_id: selectedInferenceModelId,
+      image_id: img.id,
+      conf_threshold: inferenceConf,
+      iou_threshold: inferenceIou,
+      save_result_image: false,
+      save_to_db: false,
+    });
+
+    return res.data.detections
+      .map((det, i) => detectionToOverlay(det, img.id, i))
+      .filter((v): v is InferenceOverlay => v !== null);
+  }
+
+  async function handleRunInferenceCurrent() {
+    if (!current || !selectedInferenceModelId) {
+      alert("모델과 이미지를 선택해 주세요.");
+      return;
+    }
+
+    setInferencing(true);
+    try {
+      const overlays = await runInferenceForImage(current);
+      setInferenceByImage((prev) => ({ ...prev, [current.id]: overlays }));
+      setShowInferenceOverlay(true);
+    } catch (e) {
+      console.error(e);
+      alert("Inference failed");
+    } finally {
+      setInferencing(false);
+    }
+  }
+
+  async function handleRunInferenceAll() {
+    if (!selectedInferenceModelId) {
+      alert("Select model first.");
+      return;
+    }
+    if (images.length === 0) return;
+
+    setInferencing(true);
+    setInferenceProgress({ done: 0, total: images.length });
+    try {
+      let done = 0;
+
+      for (let start = 0; start < images.length; start += inferAllBatchSize) {
+        const chunk = images.slice(start, start + inferAllBatchSize);
+        const res = await inferenceApi.predictBatch({
+          model_id: selectedInferenceModelId,
+          image_ids: chunk.map((img) => img.id),
+          conf_threshold: inferenceConf,
+          iou_threshold: inferenceIou,
+          batch_size: inferAllBatchSize,
+          save_result_image: false,
+          save_to_db: false,
+        });
+
+        const chunkMap: Record<number, InferenceOverlay[]> = {};
+        for (const item of res.data.results) {
+          chunkMap[item.image_id] = item.detections
+            .map((det, i) => detectionToOverlay(det, item.image_id, i))
+            .filter((v): v is InferenceOverlay => v !== null);
+        }
+        setInferenceByImage((prev) => ({ ...prev, ...chunkMap }));
+
+        done += chunk.length;
+        setInferenceProgress({ done, total: images.length });
+      }
+
+      setShowInferenceOverlay(true);
+    } catch (e) {
+      console.error(e);
+      alert("Inference (all images) failed");
+    } finally {
+      setInferencing(false);
+      setInferenceProgress(null);
+    }
+  }
+
+  function handleInferenceOverlayClick(overlay: InferenceOverlay) {
+    const labelBox = toLabelBox(overlay);
+    if (!labelBox) {
+      alert(`Class mapping not found for class index ${overlay.classIndex}.`);
+      return;
+    }
+
+    setCurrentBoxes((prev) => [...prev, labelBox]);
+
+    if (current) {
+      setInferenceByImage((prev) => ({
+        ...prev,
+        [current.id]: (prev[current.id] ?? []).filter((x) => x.id !== overlay.id),
+      }));
+    }
+  }
+
+  function handleApplyAllCurrentInference() {
+    if (!current) return;
+    const overlays = inferenceByImage[current.id] ?? [];
+    const converted = overlays.map(toLabelBox).filter((v): v is BoxAnno => v !== null);
+    if (converted.length === 0) return;
+
+    setCurrentBoxes((prev) => [...prev, ...converted]);
+    setInferenceByImage((prev) => ({
+      ...prev,
+      [current.id]: [],
+    }));
+  }
+
+  function handleClearCurrentInference() {
+    if (!current) return;
+    setInferenceByImage((prev) => ({ ...prev, [current.id]: [] }));
+  }
+
+  function handleClearAllInference() {
+    setInferenceByImage({});
   }
 
   // Save annotations for a specific image
@@ -296,6 +542,9 @@ export default function ProjectLabelingPage() {
             activeClassId={activeClassId}
             classColors={classColorMap}
             viewerHeight="calc(100vh - 130px)"
+            inferenceOverlays={currentInferenceBoxes}
+            showInferenceOverlays={showInferenceOverlay}
+            onInferenceOverlayClick={handleInferenceOverlayClick}
           />
         ) : (
           <div style={{ padding: 40, border: "1px dashed #444", borderRadius: 12, textAlign: "center", color: "#888" }}>
@@ -338,12 +587,108 @@ export default function ProjectLabelingPage() {
         </div>
 
         {/* Current image annotations */}
+        <div style={{ borderTop: "1px solid #333", paddingTop: 12, marginBottom: 12 }}>
+          <div style={{ fontWeight: 700, fontSize: 14, color: "#fff", marginBottom: 8 }}>
+            Inference Overlay
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <select
+              value={selectedInferenceModelId}
+              onChange={(e) => setSelectedInferenceModelId(e.target.value ? Number(e.target.value) : "")}
+              style={{ ...inputLikeStyle, width: "100%" }}
+            >
+              <option value="">Select trained model</option>
+              {inferenceModels.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.name} ({m.model_type}, mAP50 {m.map50 != null ? (m.map50 * 100).toFixed(1) : "N/A"}%)
+                </option>
+              ))}
+            </select>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+              <label style={{ fontSize: 12, color: "#aaa" }}>
+                Conf
+                <input
+                  type="number"
+                  step={0.05}
+                  min={0}
+                  max={1}
+                  value={inferenceConf}
+                  onChange={(e) => setInferenceConf(Number(e.target.value))}
+                  style={{ ...inputLikeStyle, width: "100%", marginTop: 4 }}
+                />
+              </label>
+              <label style={{ fontSize: 12, color: "#aaa" }}>
+                IoU
+                <input
+                  type="number"
+                  step={0.05}
+                  min={0}
+                  max={1}
+                  value={inferenceIou}
+                  onChange={(e) => setInferenceIou(Number(e.target.value))}
+                  style={{ ...inputLikeStyle, width: "100%", marginTop: 4 }}
+                />
+              </label>
+            </div>
+            <label style={{ fontSize: 12, color: "#aaa" }}>
+              Infer All Batch
+              <select
+                value={inferAllBatchSize}
+                onChange={(e) => setInferAllBatchSize(Number(e.target.value) as 5 | 10)}
+                style={{ ...inputLikeStyle, width: "100%", marginTop: 4 }}
+              >
+                <option value={10}>10 (Recommended)</option>
+                <option value={5}>5</option>
+              </select>
+            </label>
+
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button onClick={handleRunInferenceCurrent} disabled={inferencing || !current || !selectedInferenceModelId} style={btnSmall}>
+                Infer Current
+              </button>
+              <button onClick={handleRunInferenceAll} disabled={inferencing || !selectedInferenceModelId || images.length === 0} style={btnSmall}>
+                Infer All Images
+              </button>
+              <button onClick={handleApplyAllCurrentInference} disabled={currentInferenceBoxes.length === 0} style={{ ...btnSmall, background: "#0369a1" }}>
+                Apply All Visible
+              </button>
+            </div>
+
+            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+              <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: "#aaa" }}>
+                <input type="checkbox" checked={showInferenceOverlay} onChange={(e) => setShowInferenceOverlay(e.target.checked)} />
+                Show overlay
+              </label>
+              <button onClick={handleClearCurrentInference} disabled={currentInferenceBoxes.length === 0} style={btnSmall}>
+                Clear Current
+              </button>
+              <button onClick={handleClearAllInference} disabled={Object.keys(inferenceByImage).length === 0} style={btnSmall}>
+                Clear All
+              </button>
+            </div>
+
+            {inferenceProgress && (
+              <div style={{ fontSize: 12, color: "#7dd3fc" }}>
+                Running inference: {inferenceProgress.done}/{inferenceProgress.total}
+              </div>
+            )}
+            {!inferenceProgress && inferencing && (
+              <div style={{ fontSize: 12, color: "#7dd3fc" }}>Running inference...</div>
+            )}
+
+            <div style={{ fontSize: 11, color: "#94a3b8" }}>
+              Click a sky-blue overlay box on canvas to convert it into a label annotation.
+            </div>
+          </div>
+        </div>
+
         <div style={{ borderTop: "1px solid #333", paddingTop: 12 }}>
           <div style={{ fontWeight: 700, fontSize: 14, color: "#fff", marginBottom: 8 }}>
             Annotations ({currentBoxes.length})
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 4, maxHeight: 300, overflow: "auto" }}>
-            {currentBoxes.map((b, i) => {
+            {currentBoxes.map((b) => {
               const cls = classes.find((c) => c.id === b.classId);
               return (
                 <div key={b.id} style={{ fontSize: 12, color: "#ccc", padding: "4px 6px", background: "#222", borderRadius: 4, display: "flex", gap: 6, alignItems: "center" }}>
@@ -367,6 +712,8 @@ export default function ProjectLabelingPage() {
             <li>Double-click: fit to screen</li>
             <li>Use Fit / 100% / Pan in viewer toolbar</li>
             <li>Bottom-right minimap: click/drag to navigate</li>
+            <li>Inference overlay: sky-blue boxes (toggle on/off)</li>
+            <li>Click overlay to convert to label</li>
             <li>Class: number keys 1-9</li>
             <li>Navigate: A/D or &larr;/&rarr;</li>
             <li>Save: Ctrl+S</li>
@@ -472,3 +819,13 @@ const btnSmall: React.CSSProperties = {
   fontSize: 12,
   fontWeight: 500,
 };
+
+const inputLikeStyle: React.CSSProperties = {
+  background: "#0f172a",
+  color: "#e2e8f0",
+  border: "1px solid #334155",
+  borderRadius: 6,
+  padding: "6px 8px",
+  fontSize: 12,
+};
+

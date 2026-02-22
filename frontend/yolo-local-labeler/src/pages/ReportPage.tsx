@@ -1,8 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { trainingApi } from "../api/training";
+import axios from "axios";
 import { inferenceApi } from "../api/inference";
-import type { TrainingSession, MetricsLog } from "../api/training";
 import type { ModelInfo } from "../api/inference";
 import client from "../api/client";
 
@@ -36,7 +35,8 @@ export default function ReportPage() {
       a.click();
       URL.revokeObjectURL(url);
     } catch (e) {
-      alert("Failed to generate report. Report generation endpoint may not be available yet.");
+      const detail = axios.isAxiosError(e) ? e.response?.data?.detail : undefined;
+      alert(detail ?? "Failed to generate report");
       console.error(e);
     } finally {
       setLoading(false);

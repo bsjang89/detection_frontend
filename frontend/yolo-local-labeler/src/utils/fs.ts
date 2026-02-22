@@ -21,7 +21,7 @@ export async function pickFolderImages(): Promise<{
   const dirHandle: FileSystemDirectoryHandle = await window.showDirectoryPicker();
 
   const images: PickedImage[] = [];
-  for await (const [name, handle] of dirHandle.entries()) {
+  for await (const [name, handle] of (dirHandle as any).entries()) {
     if (handle.kind === "file" && isImage(name)) {
       const fileHandle = handle as FileSystemFileHandle;
       const file = await fileHandle.getFile();

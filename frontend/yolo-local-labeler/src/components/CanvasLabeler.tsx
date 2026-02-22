@@ -8,6 +8,20 @@ const CLASS_COLORS: Record<number, string> = {
   1: "lime",
 };
 
+export type InferenceOverlay = {
+  id: string;
+  cx: number;
+  cy: number;
+  w: number;
+  h: number;
+  rotation: number;
+  classId?: number;
+  classIndex?: number;
+  className?: string;
+  confidence?: number;
+  canConvert?: boolean;
+};
+
 type Props = {
   boxes: BoxAnno[];
   setBoxes: React.Dispatch<React.SetStateAction<BoxAnno[]>>;
@@ -15,6 +29,9 @@ type Props = {
   imageUrl: string;
   classColors?: Record<number, string>;
   viewerHeight?: number | string;
+  inferenceOverlays?: InferenceOverlay[];
+  showInferenceOverlays?: boolean;
+  onInferenceOverlayClick?: (overlay: InferenceOverlay) => void;
 };
 
 function uid() {
@@ -32,6 +49,9 @@ export default function CanvasLabeler({
   activeClassId,
   classColors = {},
   viewerHeight = "76vh",
+  inferenceOverlays = [],
+  showInferenceOverlays = false,
+  onInferenceOverlayClick,
 }: Props) {
   const [img] = useImage(imageUrl);
   const stageRef = useRef<any>(null);
@@ -156,7 +176,7 @@ export default function CanvasLabeler({
     };
   }, [viewPos.x, viewPos.y, viewScale]);
 
-  const imageToRect = useCallback((b: BoxAnno) => {
+  const imageToRect = useCallback((b: Pick<BoxAnno, "cx" | "cy" | "w" | "h" | "rotation">) => {
     return {
       x: b.cx - b.w / 2,
       y: b.cy - b.h / 2,
@@ -485,6 +505,25 @@ export default function CanvasLabeler({
         >
           <Layer x={viewPos.x} y={viewPos.y} scaleX={viewScale} scaleY={viewScale}>
             {img && <KImage image={img} listening={false} />}
+
+            {showInferenceOverlays && inferenceOverlays.map((overlay) => (
+              <Rect
+                key={`inf-${overlay.id}`}
+                {...imageToRect(overlay)}
+                stroke={overlay.canConvert === false ? "rgba(148, 163, 184, 0.9)" : "rgba(56, 189, 248, 0.95)"}
+                fill={overlay.canConvert === false ? "rgba(148, 163, 184, 0.18)" : "rgba(56, 189, 248, 0.25)"}
+                strokeWidth={8}
+                dash={[8, 5]}
+                draggable={false}
+                listening={!panMode}
+                onClick={() => {
+                  if (!panMode && onInferenceOverlayClick) onInferenceOverlayClick(overlay);
+                }}
+                onTap={() => {
+                  if (!panMode && onInferenceOverlayClick) onInferenceOverlayClick(overlay);
+                }}
+              />
+            ))}
 
             {boxes.map((b) => (
               <Rect
