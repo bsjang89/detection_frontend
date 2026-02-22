@@ -4,6 +4,7 @@ import axios from "axios";
 import { inferenceApi } from "../api/inference";
 import type { ModelInfo } from "../api/inference";
 import client from "../api/client";
+import RoundedSelect from "../components/RoundedSelect";
 
 export default function ReportPage() {
   const navigate = useNavigate();
@@ -46,7 +47,7 @@ export default function ReportPage() {
   const selectedModel = models.find((m) => m.id === selectedModelId);
 
   return (
-    <div style={{ maxWidth: 900, margin: "0 auto", padding: 24 }}>
+    <div className="page-shell" style={{ maxWidth: 980 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 24 }}>
         <button onClick={() => navigate("/")} style={btnStyle}>Projects</button>
         <h1 style={{ margin: 0 }}>Report Generation</h1>
@@ -57,22 +58,20 @@ export default function ReportPage() {
 
         <label style={labelStyle}>
           Select Model
-          <select
-            value={selectedModelId}
-            onChange={(e) => setSelectedModelId(e.target.value ? Number(e.target.value) : "")}
+          <RoundedSelect
+            value={selectedModelId ? String(selectedModelId) : ""}
+            onChange={(value) => setSelectedModelId(value ? Number(value) : "")}
+            placeholder="-- Select a trained model --"
+            options={models.map((m) => ({
+              value: String(m.id),
+              label: `${m.name} (${m.model_type}) - mAP50: ${m.map50 != null ? (m.map50 * 100).toFixed(1) + "%" : "N/A"}`,
+            }))}
             style={inputStyle}
-          >
-            <option value="">-- Select a trained model --</option>
-            {models.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.name} ({m.model_type}) - mAP50: {m.map50 != null ? (m.map50 * 100).toFixed(1) + "%" : "N/A"}
-              </option>
-            ))}
-          </select>
+          />
         </label>
 
         {selectedModel && (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginTop: 16 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12, marginTop: 16 }}>
             <StatBox label="Model Type" value={selectedModel.model_type} />
             <StatBox label="Task Type" value={selectedModel.task_type} />
             <StatBox label="mAP50" value={selectedModel.map50 != null ? `${(selectedModel.map50 * 100).toFixed(1)}%` : "N/A"} />
@@ -83,7 +82,7 @@ export default function ReportPage() {
         <button
           onClick={handleGenerate}
           disabled={loading || !selectedModelId}
-          style={{ ...btnStyle, background: "#16a34a", marginTop: 16, padding: "10px 24px" }}
+          style={{ ...btnStyle, background: "linear-gradient(135deg, #10b981, #34d399)", marginTop: 16, padding: "10px 24px" }}
         >
           {loading ? "Generating..." : "Generate & Download Report"}
         </button>
@@ -105,14 +104,39 @@ export default function ReportPage() {
 
 function StatBox({ label, value }: { label: string; value: string }) {
   return (
-    <div style={{ textAlign: "center", padding: 12, background: "#222", borderRadius: 8 }}>
+    <div style={{ textAlign: "center", padding: 12, background: "rgba(30, 41, 59, 0.5)", borderRadius: 10, border: "1px solid var(--line)" }}>
       <div style={{ fontSize: 17, fontWeight: 700, color: "#fff" }}>{value}</div>
-      <div style={{ fontSize: 12, color: "#999" }}>{label}</div>
+      <div style={{ fontSize: 14, color: "#cbd5e1" }}>{label}</div>
     </div>
   );
 }
 
-const btnStyle: React.CSSProperties = { padding: "8px 16px", borderRadius: 8, border: "none", background: "#333", color: "#fff", cursor: "pointer", fontSize: 14, fontWeight: 500 };
-const inputStyle: React.CSSProperties = { padding: "8px 12px", borderRadius: 8, border: "1px solid #444", background: "#1a1a1a", color: "#fff", fontSize: 15, width: "100%" };
-const labelStyle: React.CSSProperties = { display: "flex", flexDirection: "column", gap: 5, fontSize: 14, color: "#ccc" };
-const cardStyle: React.CSSProperties = { background: "#1a1a1a", borderRadius: 12, padding: 24, border: "1px solid #2a2a2a" };
+const btnStyle: React.CSSProperties = {
+  padding: "10px 18px",
+  borderRadius: 10,
+  border: "1px solid var(--line)",
+  background: "linear-gradient(180deg, rgba(30, 41, 59, 0.9), rgba(15, 23, 42, 0.95))",
+  color: "var(--text-0)",
+  cursor: "pointer",
+  fontSize: 15,
+  fontWeight: 700,
+  boxShadow: "var(--shadow-1)",
+};
+const inputStyle: React.CSSProperties = {
+  padding: "10px 12px",
+  borderRadius: 10,
+  border: "1px solid var(--line)",
+  background: "rgba(15, 23, 42, 0.88)",
+  color: "var(--text-0)",
+  fontSize: 16,
+  width: "100%",
+};
+const labelStyle: React.CSSProperties = { display: "flex", flexDirection: "column", gap: 6, fontSize: 15, color: "var(--text-1)" };
+const cardStyle: React.CSSProperties = {
+  background: "linear-gradient(165deg, rgba(20, 30, 56, 0.86), rgba(12, 20, 38, 0.86))",
+  borderRadius: 16,
+  padding: 24,
+  border: "1px solid var(--line)",
+  boxShadow: "var(--shadow-1)",
+  backdropFilter: "blur(6px)",
+};

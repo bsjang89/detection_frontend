@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import CanvasLabeler, { type InferenceOverlay } from "../components/CanvasLabeler";
+import RoundedSelect from "../components/RoundedSelect";
 import { projectsApi } from "../api/projects";
 import { annotationsApi } from "../api/annotations";
 import { inferenceApi } from "../api/inference";
@@ -41,6 +42,7 @@ export default function ProjectLabelingPage() {
   const [inferAllBatchSize, setInferAllBatchSize] = useState<5 | 10>(10);
 
   const current = images[idx] ?? null;
+  const currentId = current?.id ?? null;
   const currentBoxes = current ? annos[current.id] ?? [] : [];
   const currentInferenceBoxes = current ? inferenceByImage[current.id] ?? [] : [];
 
@@ -133,15 +135,20 @@ export default function ProjectLabelingPage() {
     };
   }
 
-  function setCurrentBoxes(next: BoxAnno[] | ((prev: BoxAnno[]) => BoxAnno[])) {
-    if (!current) return;
+  const setCurrentBoxes = useCallback((next: BoxAnno[] | ((prev: BoxAnno[]) => BoxAnno[])) => {
+    if (currentId === null) return;
     setAnnos((m) => {
-      const prevBoxes = m[current.id] ?? [];
+      const prevBoxes = m[currentId] ?? [];
       const nextBoxes = typeof next === "function" ? next(prevBoxes) : next;
-      return { ...m, [current.id]: nextBoxes };
+      return { ...m, [currentId]: nextBoxes };
     });
-    setDirty((prev) => new Set(prev).add(current.id));
-  }
+    setDirty((prev) => {
+      if (prev.has(currentId)) return prev;
+      const nextSet = new Set(prev);
+      nextSet.add(currentId);
+      return nextSet;
+    });
+  }, [currentId]);
 
   const classByYoloIndex = useMemo(() => {
     const map = new Map<number, ApiClassDef>();
@@ -466,9 +473,22 @@ export default function ProjectLabelingPage() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [classes, images.length, idx, dirty, annos, current]);
 
-  function imageUrl(img: ImageInfo) {
-    return `${API_SERVER_URL}/${img.file_path.replace(/\\/g, "/")}`;
-  }
+  const imageUrl = useCallback((img: ImageInfo) => {
+    const relativePath = (img.viewer_path ?? img.file_path).replace(/\\/g, "/");
+    return `${API_SERVER_URL}/${relativePath}`;
+  }, []);
+
+  useEffect(() => {
+    if (!images.length) return;
+    const candidates = [images[idx + 1], images[idx + 2], images[idx - 1]].filter(
+      (img): img is ImageInfo => Boolean(img)
+    );
+    for (const img of candidates) {
+      const preload = new window.Image();
+      preload.decoding = "async";
+      preload.src = imageUrl(img);
+    }
+  }, [idx, images, imageUrl]);
 
   const progress = useMemo(() => {
     const labeled = images.filter((im) => (annos[im.id]?.length ?? 0) > 0 || im.annotation_count > 0).length;
@@ -483,53 +503,98 @@ export default function ProjectLabelingPage() {
     return map;
   }, [classes]);
 
+  const classNameMap = useMemo(() => {
+    const map: Record<number, string> = {};
+    for (const c of classes) {
+      map[c.id] = c.class_name;
+    }
+    return map;
+  }, [classes]);
+
   if (loading) return <div style={{ padding: 24, color: "#e5e5e5" }}>Loading...</div>;
   if (!project) return <div style={{ padding: 24, color: "#e5e5e5" }}>Project not found</div>;
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "280px 1fr 280px", height: "100vh", color: "#e5e5e5" }}>
+    <div className="workbench-shell" style={{ display: "grid", gridTemplateColumns: "minmax(260px, 19vw) 1fr minmax(300px, 22vw)", height: "100vh", color: "var(--text-0)", background: "transparent" }}>
       {/* Left - Image list */}
-      <div style={{ borderRight: "1px solid #2a2a2a", padding: 12, overflow: "auto", background: "#141414" }}>
-        <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", marginBottom: 12 }}>
-          <button onClick={() => navigate(`/projects/${pid}`)} style={btnSmall}>
-            Project
-          </button>
-          <button onClick={prev} disabled={!images.length || idx === 0} style={btnSmall}>
-            Prev
-          </button>
-          <button onClick={next} disabled={!images.length || idx === images.length - 1} style={btnSmall}>
-            Next
-          </button>
-          <button
-            onClick={saveCurrentAnnotations}
-            disabled={saving || !current || !dirty.has(current?.id ?? -1)}
-            style={{ ...btnSmall, background: dirty.has(current?.id ?? -1) ? "#16a34a" : "#333" }}
-          >
-            {saving ? "Saving..." : "Save"}
-          </button>
+      <div
+        style={{
+          borderRight: "1px solid var(--line)",
+          overflow: "hidden",
+          background: "linear-gradient(165deg, rgba(20, 30, 56, 0.86), rgba(12, 20, 38, 0.86))",
+          display: "flex",
+          flexDirection: "column",
+        }}
+      >
+        <div
+          style={{
+            padding: 12,
+            borderBottom: "1px solid var(--line)",
+            background: "rgba(8, 15, 30, 0.45)",
+            boxShadow: "0 8px 20px rgba(2, 8, 23, 0.35)",
+            flexShrink: 0,
+          }}
+        >
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8 }}>
+            <button onClick={() => navigate(`/projects/${pid}`)} style={navBtnStyle}>
+              Project
+            </button>
+            <button onClick={() => navigate(`/projects/${pid}/training`)} style={navBtnStyle}>
+              Training
+            </button>
+            <button onClick={() => navigate("/compare")} style={navBtnStyle}>
+              Compare
+            </button>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8, marginTop: 8 }}>
+            <button onClick={prev} disabled={!images.length || idx === 0} style={navBtnStyle}>
+              Prev
+            </button>
+            <button onClick={next} disabled={!images.length || idx === images.length - 1} style={navBtnStyle}>
+              Next
+            </button>
+            <button
+              onClick={saveCurrentAnnotations}
+              disabled={saving || !current || !dirty.has(current?.id ?? -1)}
+              style={{
+                ...navBtnStyle,
+                background: dirty.has(current?.id ?? -1)
+                  ? "linear-gradient(135deg, #10b981, #34d399)"
+                  : "linear-gradient(180deg, rgba(30, 41, 59, 0.9), rgba(15, 23, 42, 0.95))",
+              }}
+            >
+              {saving ? "Saving..." : "Save"}
+            </button>
+          </div>
+
+          <div style={{ fontSize: 14, color: "var(--text-1)", marginTop: 10 }}>
+            Flow: Select image -&gt; Label -&gt; Save (Auto-save on) -&gt; Infer if needed
+          </div>
         </div>
 
-        <div style={{ fontSize: 13, color: "#999", marginBottom: 8 }}>
-          {progress.labeled}/{progress.total} labeled
+        <div style={{ padding: "10px 12px", flex: 1, minHeight: 0, overflow: "hidden" }}>
+          <div style={{ fontSize: 14, color: "#cbd5e1", marginBottom: 8 }}>
+            {progress.labeled}/{progress.total} labeled
+          </div>
+          <VirtualImageList
+            images={images}
+            annos={annos}
+            dirty={dirty}
+            idx={idx}
+            onSelect={saveAndGo}
+          />
         </div>
-
-        <VirtualImageList
-          images={images}
-          annos={annos}
-          dirty={dirty}
-          idx={idx}
-          onSelect={saveAndGo}
-        />
       </div>
 
       {/* Center - Canvas */}
-      <div style={{ padding: 12, overflow: "auto", background: "#111" }}>
+      <div style={{ padding: 12, overflow: "auto", background: "rgba(8, 15, 30, 0.68)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 8 }}>
-          <div style={{ fontWeight: 600, fontSize: 14, color: "#fff" }}>
+          <div style={{ fontWeight: 700, fontSize: 17, color: "#fff" }}>
             {current?.filename ?? "No image"}
-            {current && dirty.has(current.id) && <span style={{ color: "#eab308", marginLeft: 6, fontSize: 12 }}>(unsaved)</span>}
+            {current && dirty.has(current.id) && <span style={{ color: "#fbbf24", marginLeft: 8, fontSize: 14 }}>(unsaved)</span>}
           </div>
-          <div style={{ fontSize: 12, color: "#888" }}>
+          <div style={{ fontSize: 14, color: "#94a3b8" }}>
             {idx + 1} / {images.length}
           </div>
         </div>
@@ -541,6 +606,7 @@ export default function ProjectLabelingPage() {
             setBoxes={setCurrentBoxes}
             activeClassId={activeClassId}
             classColors={classColorMap}
+            classNames={classNameMap}
             viewerHeight="calc(100vh - 130px)"
             inferenceOverlays={currentInferenceBoxes}
             showInferenceOverlays={showInferenceOverlay}
@@ -554,8 +620,8 @@ export default function ProjectLabelingPage() {
       </div>
 
       {/* Right - Classes & Info */}
-      <div style={{ borderLeft: "1px solid #2a2a2a", padding: 12, overflow: "auto", background: "#141414" }}>
-        <div style={{ fontWeight: 700, fontSize: 14, color: "#fff", marginBottom: 12 }}>
+      <div style={{ borderLeft: "1px solid var(--line)", padding: 12, overflow: "auto", background: "linear-gradient(165deg, rgba(20, 30, 56, 0.86), rgba(12, 20, 38, 0.86))" }}>
+        <div style={{ fontWeight: 800, fontSize: 18, color: "#fff", marginBottom: 12 }}>
           Classes ({classes.length})
         </div>
 
@@ -565,22 +631,23 @@ export default function ProjectLabelingPage() {
               key={c.id}
               onClick={() => setActiveClassId(c.id)}
               style={{
-                padding: "8px 10px",
-                borderRadius: 8,
+                padding: "10px 12px",
+                borderRadius: 10,
                 cursor: "pointer",
-                background: c.id === activeClassId ? "#2563eb" : "#222",
+                background: c.id === activeClassId ? "rgba(14, 165, 233, 0.25)" : "rgba(15, 23, 42, 0.6)",
                 display: "flex",
                 alignItems: "center",
                 gap: 8,
+                border: c.id === activeClassId ? "1px solid var(--line-strong)" : "1px solid var(--line)",
               }}
             >
-              <div style={{ width: 14, height: 14, borderRadius: 3, background: c.color ?? "#888", flexShrink: 0 }} />
-              <span style={{ flex: 1, fontSize: 13, color: "#e5e5e5" }}>{c.class_name}</span>
-              <span style={{ fontSize: 11, color: "#888" }}>{i + 1}</span>
+              <div style={{ width: 16, height: 16, borderRadius: 4, background: c.color ?? "#888", flexShrink: 0 }} />
+              <span style={{ flex: 1, fontSize: 15, color: "#e5e5e5" }}>{c.class_name}</span>
+              <span style={{ fontSize: 13, color: "#94a3b8" }}>{i + 1}</span>
             </div>
           ))}
           {classes.length === 0 && (
-            <p style={{ color: "#888", fontSize: 13 }}>
+            <p style={{ color: "#94a3b8", fontSize: 14 }}>
               No classes. Add classes in the project detail page.
             </p>
           )}
@@ -592,21 +659,19 @@ export default function ProjectLabelingPage() {
             Inference Overlay
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <select
-              value={selectedInferenceModelId}
-              onChange={(e) => setSelectedInferenceModelId(e.target.value ? Number(e.target.value) : "")}
+            <RoundedSelect
+              value={selectedInferenceModelId ? String(selectedInferenceModelId) : ""}
+              onChange={(value) => setSelectedInferenceModelId(value ? Number(value) : "")}
+              placeholder="Select trained model"
+              options={inferenceModels.map((m) => ({
+                value: String(m.id),
+                label: `${m.name} (${m.model_type}, mAP50 ${m.map50 != null ? (m.map50 * 100).toFixed(1) : "N/A"}%)`,
+              }))}
               style={{ ...inputLikeStyle, width: "100%" }}
-            >
-              <option value="">Select trained model</option>
-              {inferenceModels.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.name} ({m.model_type}, mAP50 {m.map50 != null ? (m.map50 * 100).toFixed(1) : "N/A"}%)
-                </option>
-              ))}
-            </select>
+            />
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-              <label style={{ fontSize: 12, color: "#aaa" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              <label style={{ fontSize: 14, color: "#cbd5e1" }}>
                 Conf
                 <input
                   type="number"
@@ -618,7 +683,7 @@ export default function ProjectLabelingPage() {
                   style={{ ...inputLikeStyle, width: "100%", marginTop: 4 }}
                 />
               </label>
-              <label style={{ fontSize: 12, color: "#aaa" }}>
+              <label style={{ fontSize: 14, color: "#cbd5e1" }}>
                 IoU
                 <input
                   type="number"
@@ -631,16 +696,19 @@ export default function ProjectLabelingPage() {
                 />
               </label>
             </div>
-            <label style={{ fontSize: 12, color: "#aaa" }}>
+            <label style={{ fontSize: 14, color: "#cbd5e1" }}>
               Infer All Batch
-              <select
-                value={inferAllBatchSize}
-                onChange={(e) => setInferAllBatchSize(Number(e.target.value) as 5 | 10)}
-                style={{ ...inputLikeStyle, width: "100%", marginTop: 4 }}
-              >
-                <option value={10}>10 (Recommended)</option>
-                <option value={5}>5</option>
-              </select>
+              <div style={{ marginTop: 4 }}>
+                <RoundedSelect
+                  value={String(inferAllBatchSize)}
+                  onChange={(value) => setInferAllBatchSize(Number(value) as 5 | 10)}
+                  options={[
+                    { value: "10", label: "10 (Recommended)" },
+                    { value: "5", label: "5" },
+                  ]}
+                  style={{ ...inputLikeStyle, width: "100%" }}
+                />
+              </div>
             </label>
 
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -650,13 +718,13 @@ export default function ProjectLabelingPage() {
               <button onClick={handleRunInferenceAll} disabled={inferencing || !selectedInferenceModelId || images.length === 0} style={btnSmall}>
                 Infer All Images
               </button>
-              <button onClick={handleApplyAllCurrentInference} disabled={currentInferenceBoxes.length === 0} style={{ ...btnSmall, background: "#0369a1" }}>
+              <button onClick={handleApplyAllCurrentInference} disabled={currentInferenceBoxes.length === 0} style={{ ...btnSmall, background: "linear-gradient(135deg, #0284c7, #22d3ee)" }}>
                 Apply All Visible
               </button>
             </div>
 
             <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-              <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: "#aaa" }}>
+              <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 14, color: "#cbd5e1" }}>
                 <input type="checkbox" checked={showInferenceOverlay} onChange={(e) => setShowInferenceOverlay(e.target.checked)} />
                 Show overlay
               </label>
@@ -669,29 +737,29 @@ export default function ProjectLabelingPage() {
             </div>
 
             {inferenceProgress && (
-              <div style={{ fontSize: 12, color: "#7dd3fc" }}>
+              <div style={{ fontSize: 14, color: "#7dd3fc" }}>
                 Running inference: {inferenceProgress.done}/{inferenceProgress.total}
               </div>
             )}
             {!inferenceProgress && inferencing && (
-              <div style={{ fontSize: 12, color: "#7dd3fc" }}>Running inference...</div>
+              <div style={{ fontSize: 14, color: "#7dd3fc" }}>Running inference...</div>
             )}
 
-            <div style={{ fontSize: 11, color: "#94a3b8" }}>
+            <div style={{ fontSize: 13, color: "#cbd5e1" }}>
               Click a sky-blue overlay box on canvas to convert it into a label annotation.
             </div>
           </div>
         </div>
 
         <div style={{ borderTop: "1px solid #333", paddingTop: 12 }}>
-          <div style={{ fontWeight: 700, fontSize: 14, color: "#fff", marginBottom: 8 }}>
+          <div style={{ fontWeight: 700, fontSize: 16, color: "#fff", marginBottom: 8 }}>
             Annotations ({currentBoxes.length})
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 4, maxHeight: 300, overflow: "auto" }}>
             {currentBoxes.map((b) => {
               const cls = classes.find((c) => c.id === b.classId);
               return (
-                <div key={b.id} style={{ fontSize: 12, color: "#ccc", padding: "4px 6px", background: "#222", borderRadius: 4, display: "flex", gap: 6, alignItems: "center" }}>
+                <div key={b.id} style={{ fontSize: 14, color: "#e2e8f0", padding: "6px 8px", background: "rgba(15, 23, 42, 0.75)", borderRadius: 8, border: "1px solid var(--line)", display: "flex", gap: 6, alignItems: "center" }}>
                   <div style={{ width: 10, height: 10, borderRadius: 2, background: cls?.color ?? "#888", flexShrink: 0 }} />
                   <span style={{ flex: 1 }}>{cls?.class_name ?? `class_${b.classId}`}</span>
                   <span style={{ color: "#666" }}>{(b.rotation * 180 / Math.PI).toFixed(0)}&deg;</span>
@@ -703,8 +771,8 @@ export default function ProjectLabelingPage() {
 
         {/* Tips */}
         <div style={{ borderTop: "1px solid #333", paddingTop: 12, marginTop: 12 }}>
-          <div style={{ fontWeight: 700, fontSize: 14, color: "#fff", marginBottom: 6 }}>Tips</div>
-          <ul style={{ fontSize: 12, color: "#999", lineHeight: 1.8, paddingLeft: 16, margin: 0 }}>
+          <div style={{ fontWeight: 700, fontSize: 16, color: "#fff", marginBottom: 6 }}>Tips</div>
+          <ul style={{ fontSize: 14, color: "#cbd5e1", lineHeight: 1.8, paddingLeft: 18, margin: 0 }}>
             <li>Drag: new box</li>
             <li>Click box: select &rarr; resize/rotate</li>
             <li>Ctrl + wheel: zoom in/out</li>
@@ -725,7 +793,7 @@ export default function ProjectLabelingPage() {
   );
 }
 
-const IMG_ROW_H = 32;
+const IMG_ROW_H = 38;
 const OVERSCAN = 10;
 
 function VirtualImageList({
@@ -772,7 +840,7 @@ function VirtualImageList({
   const endIdx = Math.min(images.length, Math.ceil((scrollTop + viewH) / IMG_ROW_H) + OVERSCAN);
 
   return (
-    <div ref={containerRef} onScroll={handleScroll} style={{ flex: 1, overflow: "auto" }}>
+    <div ref={containerRef} onScroll={handleScroll} style={{ height: "100%", overflow: "auto" }}>
       <div style={{ height: totalH, position: "relative" }}>
         <div style={{ position: "absolute", top: startIdx * IMG_ROW_H, left: 0, right: 0 }}>
           {images.slice(startIdx, endIdx).map((im, offset) => {
@@ -787,17 +855,18 @@ function VirtualImageList({
                   height: IMG_ROW_H,
                   cursor: "pointer",
                   padding: "0 8px",
-                  borderRadius: 4,
-                  background: i === idx ? "#2a2a2a" : "transparent",
+                  borderRadius: 8,
+                  background: i === idx ? "rgba(14, 165, 233, 0.2)" : "transparent",
+                  border: i === idx ? "1px solid var(--line-strong)" : "1px solid transparent",
                   display: "flex",
                   alignItems: "center",
                   gap: 8,
                 }}
               >
-                <span style={{ fontSize: 10, width: 12, textAlign: "center", color: hasAnno ? "#16a34a" : "#555", flexShrink: 0 }}>
+                <span style={{ fontSize: 12, width: 12, textAlign: "center", color: hasAnno ? "#34d399" : "#64748b", flexShrink: 0 }}>
                   {isDirty ? "*" : hasAnno ? "\u25CF" : "\u25CB"}
                 </span>
-                <div style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 12, color: i === idx ? "#fff" : "#aaa" }}>
+                <div style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 14, color: i === idx ? "#fff" : "#cbd5e1" }}>
                   {im.filename}
                 </div>
               </div>
@@ -810,22 +879,35 @@ function VirtualImageList({
 }
 
 const btnSmall: React.CSSProperties = {
-  padding: "5px 10px",
-  borderRadius: 6,
-  border: "none",
-  background: "#333",
-  color: "#fff",
+  padding: "8px 12px",
+  borderRadius: 10,
+  border: "1px solid var(--line)",
+  background: "linear-gradient(180deg, rgba(30, 41, 59, 0.9), rgba(15, 23, 42, 0.95))",
+  color: "var(--text-0)",
   cursor: "pointer",
-  fontSize: 12,
-  fontWeight: 500,
+  fontSize: 14,
+  fontWeight: 700,
+  boxShadow: "var(--shadow-1)",
+};
+
+const navBtnStyle: React.CSSProperties = {
+  ...btnSmall,
+  width: "100%",
+  minHeight: 44,
+  justifyContent: "center",
+  display: "inline-flex",
+  alignItems: "center",
+  padding: "10px 12px",
+  fontSize: 15,
+  borderRadius: 12,
 };
 
 const inputLikeStyle: React.CSSProperties = {
-  background: "#0f172a",
-  color: "#e2e8f0",
-  border: "1px solid #334155",
-  borderRadius: 6,
-  padding: "6px 8px",
-  fontSize: 12,
+  background: "rgba(15, 23, 42, 0.88)",
+  color: "var(--text-0)",
+  border: "1px solid var(--line)",
+  borderRadius: 10,
+  padding: "8px 10px",
+  fontSize: 14,
 };
 

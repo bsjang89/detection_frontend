@@ -9,6 +9,7 @@ export default function ProjectDetailPage() {
   const navigate = useNavigate();
   const pid = Number(projectId);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const dropDepthRef = useRef(0);
 
   const [project, setProject] = useState<ProjectWithStats | null>(null);
   const [images, setImages] = useState<ImageInfo[]>([]);
@@ -19,6 +20,7 @@ export default function ProjectDetailPage() {
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadTotal, setUploadTotal] = useState(0);
+  const [isDropOver, setIsDropOver] = useState(false);
 
   // New class form
   const [newClassName, setNewClassName] = useState("");
@@ -46,10 +48,8 @@ export default function ProjectDetailPage() {
     }
   }
 
-  async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
-    const selectedFiles = Array.from(files);
+  async function handleUploadFiles(selectedFiles: File[]) {
+    if (selectedFiles.length === 0) return;
 
     const existingNames = new Set(images.map((img) => img.filename.toLowerCase()));
     const duplicateCount = selectedFiles.filter((f) => existingNames.has(f.name.toLowerCase())).length;
@@ -91,6 +91,50 @@ export default function ProjectDetailPage() {
     }
   }
 
+  function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    void handleUploadFiles(Array.from(files));
+  }
+
+  function handleDropZoneDragEnter(e: React.DragEvent<HTMLElement>) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (uploading) return;
+    dropDepthRef.current += 1;
+    setIsDropOver(true);
+  }
+
+  function handleDropZoneDragOver(e: React.DragEvent<HTMLElement>) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (uploading) return;
+    e.dataTransfer.dropEffect = "copy";
+    if (!isDropOver) setIsDropOver(true);
+  }
+
+  function handleDropZoneDragLeave(e: React.DragEvent<HTMLElement>) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (uploading) return;
+    dropDepthRef.current = Math.max(0, dropDepthRef.current - 1);
+    if (dropDepthRef.current === 0) setIsDropOver(false);
+  }
+
+  async function handleDropZoneDrop(e: React.DragEvent<HTMLElement>) {
+    e.preventDefault();
+    e.stopPropagation();
+    dropDepthRef.current = 0;
+    setIsDropOver(false);
+    if (uploading) return;
+    const dropped = Array.from(e.dataTransfer.files ?? []).filter((f) => f.type.startsWith("image/"));
+    if (dropped.length === 0) {
+      alert("Drop image files only.");
+      return;
+    }
+    await handleUploadFiles(dropped);
+  }
+
   async function handleAddClass() {
     if (!newClassName.trim()) return;
     const nextId = classes.length > 0 ? Math.max(...classes.map((c) => c.class_id)) + 1 : 0;
@@ -117,23 +161,34 @@ export default function ProjectDetailPage() {
   if (!project) return <div style={{ padding: 24, color: "#e5e5e5" }}>Project not found</div>;
 
   return (
-    <div style={{ maxWidth: 1200, margin: "0 auto", padding: 24, color: "#e5e5e5", fontSize: 16, lineHeight: 1.4 }}>
+    <div className="page-shell" style={{ maxWidth: 1260, color: "var(--text-0)", fontSize: 16, lineHeight: 1.4 }}>
       {/* Header */}
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 24 }}>
         <button onClick={() => navigate("/")} style={btnStyle}>Projects</button>
         <h1 style={{ margin: 0, flex: 1, color: "#fff" }}>{project.name}</h1>
-        <span style={badgeStyle(project.task_type)}>{project.task_type.toUpperCase()}</span>
-        <button onClick={() => navigate(`/projects/${pid}/labeling`)} style={{ ...btnStyle, background: "#0891b2" }}>
+        <div style={taskTypeWrapStyle}>
+          <span style={taskTypeDotStyle(project.task_type)} />
+          <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.15 }}>
+            <span style={{ fontSize: 11, color: "var(--text-2)", letterSpacing: 0.4 }}>TASK</span>
+            <span style={{ fontSize: 14, fontWeight: 800, color: "var(--text-0)" }}>{project.task_type.toUpperCase()}</span>
+          </div>
+        </div>
+        <button onClick={() => navigate(`/projects/${pid}/labeling`)} style={{ ...btnStyle, background: "linear-gradient(135deg, #0ea5e9, #22d3ee)" }}>
           Labeling
         </button>
-        <button onClick={() => navigate(`/projects/${pid}/training`)} style={{ ...btnStyle, background: "#7c3aed" }}>
+        <button onClick={() => navigate(`/projects/${pid}/training`)} style={{ ...btnStyle, background: "linear-gradient(135deg, #0284c7, #0ea5e9)" }}>
           Training
         </button>
       </div>
 
-      {project.description && (
-        <p style={{ color: "#aaa", marginBottom: 16 }}>{project.description}</p>
-      )}
+      <section style={{ ...cardStyle, marginBottom: 16, padding: "14px 18px" }}>
+        <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: 0.5, color: "var(--text-2)", marginBottom: 6 }}>
+          Description
+        </div>
+        <p style={{ margin: 0, color: "var(--text-1)", fontSize: 15, lineHeight: 1.5 }}>
+          {project.description?.trim() || "No description provided for this project."}
+        </p>
+      </section>
 
       {/* Stats */}
       <div style={{ ...cardStyle, marginBottom: 16 }}>
@@ -163,7 +218,7 @@ export default function ProjectDetailPage() {
               style={{
                 height: "100%",
                 width: `${uploadProgress}%`,
-                background: "linear-gradient(90deg, #2563eb, #7c3aed)",
+                background: "linear-gradient(90deg, #0ea5e9, #22d3ee)",
                 borderRadius: 5,
                 transition: "width 0.2s ease",
               }}
@@ -174,7 +229,21 @@ export default function ProjectDetailPage() {
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 300px", gap: 16 }}>
         {/* Images */}
-        <section style={cardStyle}>
+        <section
+          style={{
+            ...cardStyle,
+            border: isDropOver ? "1px solid var(--line-strong)" : "1px solid var(--line)",
+            boxShadow: "none",
+            background: isDropOver
+              ? "linear-gradient(165deg, rgba(12, 44, 74, 0.9), rgba(10, 32, 58, 0.9))"
+              : cardStyle.background,
+            transition: "border-color 0.16s ease, box-shadow 0.16s ease, background 0.16s ease",
+          }}
+          onDragEnter={handleDropZoneDragEnter}
+          onDragOver={handleDropZoneDragOver}
+          onDragLeave={handleDropZoneDragLeave}
+          onDrop={handleDropZoneDrop}
+        >
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
             <h3 style={{ margin: 0, color: "#fff" }}>Images ({images.length})</h3>
             <div>
@@ -189,11 +258,14 @@ export default function ProjectDetailPage() {
               <button
                 onClick={() => fileInputRef.current?.click()}
                 disabled={uploading}
-                style={{ ...btnStyle, background: "#2563eb" }}
+                style={{ ...btnStyle, background: "linear-gradient(135deg, #2563eb, #0ea5e9)" }}
               >
                 {uploading ? "Uploading..." : "+ Upload Images"}
               </button>
             </div>
+          </div>
+          <div style={{ marginTop: -4, marginBottom: 12, fontSize: 14, color: isDropOver ? "#7dd3fc" : "#94a3b8" }}>
+            {isDropOver ? "Drop images to upload" : "Tip: Click upload button or drag and drop images into this panel."}
           </div>
 
           {images.length === 0 ? (
@@ -211,10 +283,10 @@ export default function ProjectDetailPage() {
 
             <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16 }}>
               {classes.map((c) => (
-                <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: 8, background: "#2a2a2a", borderRadius: 6 }}>
+                <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: 8, background: "rgba(30, 41, 59, 0.55)", borderRadius: 8, border: "1px solid var(--line)" }}>
                   <div style={{ width: 16, height: 16, borderRadius: 4, background: c.color ?? "#888", flexShrink: 0 }} />
                   <span style={{ fontSize: 15, color: "#e5e5e5", flex: 1 }}>{c.class_name}</span>
-                  <span style={{ fontSize: 13, color: "#888" }}>ID: {c.class_id}</span>
+                  <span style={{ fontSize: 14, color: "#94a3b8" }}>ID: {c.class_id}</span>
                 </div>
               ))}
               {classes.length === 0 && (
@@ -222,7 +294,7 @@ export default function ProjectDetailPage() {
               )}
             </div>
 
-            <div style={{ borderTop: "1px solid #444", paddingTop: 12 }}>
+            <div style={{ borderTop: "1px solid var(--line)", paddingTop: 12 }}>
               <div style={{ display: "flex", gap: 6 }}>
                 <input
                   value={newClassName}
@@ -238,7 +310,7 @@ export default function ProjectDetailPage() {
                   style={{ width: 36, height: 32, border: "none", cursor: "pointer", borderRadius: 4 }}
                 />
               </div>
-              <button onClick={handleAddClass} style={{ ...btnStyle, background: "#16a34a", width: "100%", marginTop: 8 }}>
+              <button onClick={handleAddClass} style={{ ...btnStyle, background: "linear-gradient(135deg, #10b981, #34d399)", width: "100%", marginTop: 8 }}>
                 + Add Class
               </button>
             </div>
@@ -253,7 +325,7 @@ export default function ProjectDetailPage() {
             </p>
             <button
               onClick={() => navigate(`/projects/${pid}/labeling`)}
-              style={{ ...btnStyle, background: "#0891b2", width: "100%" }}
+              style={{ ...btnStyle, background: "linear-gradient(135deg, #0284c7, #22d3ee)", width: "100%" }}
             >
               Open Labeler
             </button>
@@ -265,19 +337,19 @@ export default function ProjectDetailPage() {
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               <button
                 onClick={() => navigate(`/projects/${pid}/training`)}
-                style={{ ...btnStyle, background: "#7c3aed", width: "100%" }}
+                style={{ ...btnStyle, background: "linear-gradient(135deg, #0284c7, #0ea5e9)", width: "100%" }}
               >
                 Training
               </button>
               <button
                 onClick={() => navigate("/compare")}
-                style={{ ...btnStyle, background: "#2563eb", width: "100%" }}
+                style={{ ...btnStyle, background: "linear-gradient(135deg, #2563eb, #0ea5e9)", width: "100%" }}
               >
                 Compare Models
               </button>
               <button
                 onClick={() => navigate("/report")}
-                style={{ ...btnStyle, background: "#059669", width: "100%" }}
+                style={{ ...btnStyle, background: "linear-gradient(135deg, #059669, #10b981)", width: "100%" }}
               >
                 Generate Report
               </button>
@@ -296,6 +368,7 @@ const OVERSCAN = 5;
 function VirtualImageList({ images, thumbnailUrl }: { images: ImageInfo[]; thumbnailUrl: (img: ImageInfo) => string }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [scrollTop, setScrollTop] = useState(0);
+  const [hoveredImageId, setHoveredImageId] = useState<number | null>(null);
 
   const totalHeight = images.length * ITEM_HEIGHT;
   const startIdx = Math.max(0, Math.floor(scrollTop / ITEM_HEIGHT) - OVERSCAN);
@@ -316,48 +389,103 @@ function VirtualImageList({ images, thumbnailUrl }: { images: ImageInfo[]; thumb
     >
       <div style={{ height: totalHeight, position: "relative" }}>
         <div style={{ position: "absolute", top: offsetY, left: 0, right: 0 }}>
-          {images.slice(startIdx, endIdx).map((img) => (
-            <div
-              key={img.id}
-              style={{
-                height: ITEM_HEIGHT,
-                display: "flex",
-                alignItems: "center",
-                gap: 12,
-                padding: "8px 4px",
-                borderBottom: "1px solid #333",
-              }}
-            >
-              <img
-                src={thumbnailUrl(img)}
-                alt={img.filename}
+          {images.slice(startIdx, endIdx).map((img) => {
+            const isHovered = hoveredImageId === img.id;
+            return (
+              <div
+                key={img.id}
+                onMouseEnter={() => setHoveredImageId(img.id)}
+                onMouseLeave={() => setHoveredImageId((prev) => (prev === img.id ? null : prev))}
                 style={{
-                  width: 64,
-                  height: 48,
-                  objectFit: "cover",
-                  borderRadius: 4,
-                  background: "#333",
-                  flexShrink: 0,
+                  height: ITEM_HEIGHT,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 12,
+                  padding: "8px 6px",
+                  borderBottom: "1px solid var(--line)",
+                  borderRadius: 10,
+                  background: isHovered ? "rgba(14, 165, 233, 0.11)" : "transparent",
+                  border: isHovered ? "1px solid var(--line-strong)" : "1px solid transparent",
+                  position: "relative",
+                  zIndex: isHovered ? 20 : 1,
+                  transition: "background 0.16s ease, border-color 0.16s ease",
                 }}
-                loading="lazy"
-              />
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{
-                  fontSize: 15,
-                  color: "#e5e5e5",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                }}>
-                  {img.filename}
+              >
+                <div style={{ width: 64, height: 48, position: "relative", flexShrink: 0 }}>
+                  <img
+                    src={thumbnailUrl(img)}
+                    alt={img.filename}
+                    style={{
+                      width: 64,
+                      height: 48,
+                      objectFit: "cover",
+                      borderRadius: 6,
+                      background: "rgba(30, 41, 59, 0.45)",
+                      border: "1px solid rgba(148, 163, 184, 0.35)",
+                      transform: isHovered ? "scale(1.12)" : "scale(1)",
+                      transformOrigin: "left center",
+                      transition: "transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease",
+                      boxShadow: isHovered ? "0 10px 24px rgba(2, 8, 23, 0.45)" : "none",
+                    }}
+                    loading="lazy"
+                  />
                 </div>
-                <div style={{ fontSize: 13, color: "#888" }}>
-                  {img.width}x{img.height} &middot; {img.annotation_count} annotations
+
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{
+                    fontSize: 15,
+                    color: "#e5e5e5",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                    fontWeight: isHovered ? 700 : 600,
+                  }}>
+                    {img.filename}
+                  </div>
+                  <div style={{ fontSize: 14, color: "#94a3b8" }}>
+                    {img.width}x{img.height} &middot; {img.annotation_count} annotations
+                  </div>
                 </div>
+                <span style={splitBadge(img.split_type)}>{img.split_type}</span>
+
+                {isHovered && (
+                  <div
+                    style={{
+                      position: "absolute",
+                      left: 78,
+                      top: -26,
+                      width: 220,
+                      pointerEvents: "none",
+                      background: "rgba(7, 13, 26, 0.95)",
+                      border: "1px solid var(--line-strong)",
+                      borderRadius: 12,
+                      padding: 8,
+                      boxShadow: "0 18px 38px rgba(2, 8, 23, 0.55)",
+                      backdropFilter: "blur(4px)",
+                    }}
+                  >
+                    <img
+                      src={thumbnailUrl(img)}
+                      alt={`${img.filename} preview`}
+                      style={{ width: "100%", height: 132, objectFit: "cover", borderRadius: 8, display: "block" }}
+                    />
+                    <div
+                      style={{
+                        marginTop: 6,
+                        fontSize: 12,
+                        color: "var(--text-1)",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      Hover Preview
+                    </div>
+                  </div>
+                )}
               </div>
-              <span style={splitBadge(img.split_type)}>{img.split_type}</span>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </div>
@@ -366,23 +494,65 @@ function VirtualImageList({ images, thumbnailUrl }: { images: ImageInfo[]; thumb
 
 function StatBox({ label, value }: { label: string; value: number }) {
   return (
-    <div style={{ textAlign: "center", padding: 10, background: "#2a2a2a", borderRadius: 8 }}>
+    <div style={{ textAlign: "center", padding: 10, background: "rgba(30, 41, 59, 0.5)", borderRadius: 10, border: "1px solid var(--line)" }}>
       <div style={{ fontSize: 24, fontWeight: 700, color: "#fff" }}>{value}</div>
-      <div style={{ fontSize: 13, color: "#999" }}>{label}</div>
+      <div style={{ fontSize: 14, color: "#cbd5e1" }}>{label}</div>
     </div>
   );
 }
 
-function badgeStyle(type: string): React.CSSProperties {
-  return { padding: "3px 10px", borderRadius: 4, fontSize: 13, fontWeight: 700, background: type === "obb" ? "#7c3aed" : "#2563eb", color: "#fff" };
+function taskTypeDotStyle(type: string): React.CSSProperties {
+  return {
+    width: 12,
+    height: 12,
+    borderRadius: 99,
+    background: type === "obb" ? "#22d3ee" : "#60a5fa",
+    boxShadow: type === "obb" ? "0 0 14px rgba(34, 211, 238, 0.65)" : "0 0 14px rgba(96, 165, 250, 0.55)",
+    marginTop: 1,
+  };
 }
+
+const taskTypeWrapStyle: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 8,
+  padding: "8px 10px",
+  borderRadius: 12,
+  border: "1px solid var(--line)",
+  background: "rgba(8, 15, 30, 0.75)",
+  minWidth: 92,
+};
 
 function splitBadge(split: string): React.CSSProperties {
   const colors: Record<string, string> = { train: "#16a34a", val: "#2563eb", test: "#ca8a04", unlabeled: "#555" };
-  return { padding: "3px 8px", borderRadius: 4, fontSize: 12, fontWeight: 600, background: colors[split] ?? "#555", color: "#fff" };
+  return { padding: "4px 9px", borderRadius: 6, fontSize: 13, fontWeight: 700, background: colors[split] ?? "#555", color: "#fff" };
 }
 
-const btnStyle: React.CSSProperties = { padding: "10px 18px", borderRadius: 8, border: "none", background: "#333", color: "#fff", cursor: "pointer", fontSize: 16, fontWeight: 500 };
-const inputStyle: React.CSSProperties = { padding: "10px 14px", borderRadius: 8, border: "1px solid #444", background: "#1a1a1a", color: "#fff", fontSize: 16 };
-const cardStyle: React.CSSProperties = { background: "#1a1a1a", borderRadius: 12, padding: 24, border: "1px solid #2a2a2a" };
+const btnStyle: React.CSSProperties = {
+  padding: "11px 18px",
+  borderRadius: 10,
+  border: "1px solid var(--line)",
+  background: "linear-gradient(180deg, rgba(30, 41, 59, 0.9), rgba(15, 23, 42, 0.95))",
+  color: "var(--text-0)",
+  cursor: "pointer",
+  fontSize: 16,
+  fontWeight: 700,
+  boxShadow: "var(--shadow-1)",
+};
+const inputStyle: React.CSSProperties = {
+  padding: "12px 14px",
+  borderRadius: 10,
+  border: "1px solid var(--line)",
+  background: "rgba(15, 23, 42, 0.88)",
+  color: "var(--text-0)",
+  fontSize: 16,
+};
+const cardStyle: React.CSSProperties = {
+  background: "linear-gradient(165deg, rgba(20, 30, 56, 0.86), rgba(12, 20, 38, 0.86))",
+  borderRadius: 16,
+  padding: 24,
+  border: "1px solid var(--line)",
+  boxShadow: "var(--shadow-1)",
+  backdropFilter: "blur(6px)",
+};
 

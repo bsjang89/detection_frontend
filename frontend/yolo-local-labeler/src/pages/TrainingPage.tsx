@@ -5,6 +5,7 @@ import { projectsApi } from "../api/projects";
 import { trainingApi } from "../api/training";
 import type { ProjectWithStats } from "../api/projects";
 import type { TrainingSession, TrainingConfig } from "../api/training";
+import RoundedSelect from "../components/RoundedSelect";
 
 const MODEL_OPTIONS = [
   { value: "yolov8n", label: "YOLOv8 Nano" },
@@ -236,7 +237,7 @@ export default function TrainingPage() {
   if (!project) return <div style={{ padding: 24 }}>Project not found</div>;
 
   return (
-    <div style={{ maxWidth: 1000, margin: "0 auto", padding: 24 }}>
+    <div className="page-shell" style={{ maxWidth: 1080 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 24 }}>
         <button onClick={() => navigate("/")} style={btnStyle}>Projects</button>
         <h1 style={{ margin: 0, flex: 1 }}>{project.name} - Training</h1>
@@ -270,7 +271,7 @@ export default function TrainingPage() {
             <input type="number" step={0.1} min={0} max={1} value={testR}
               onChange={(e) => setTestR(Number(e.target.value))} style={{ ...inputStyle, width: 70 }} />
           </label>
-          <button onClick={handleSplit} disabled={splitting} style={{ ...btnStyle, background: "#2563eb" }}>
+          <button onClick={handleSplit} disabled={splitting} style={{ ...btnStyle, background: "linear-gradient(135deg, #2563eb, #0ea5e9)" }}>
             {splitting ? "Splitting..." : "Split Dataset"}
           </button>
         </div>
@@ -289,9 +290,12 @@ export default function TrainingPage() {
 
           <label style={labelStyle}>
             Model
-            <select value={modelType} onChange={(e) => setModelType(e.target.value)} style={inputStyle}>
-              {MODEL_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
+            <RoundedSelect
+              value={modelType}
+              onChange={setModelType}
+              options={MODEL_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
+              style={inputStyle}
+            />
           </label>
 
           <label style={labelStyle}>
@@ -354,7 +358,7 @@ export default function TrainingPage() {
           </label>
         </div>
 
-        <button onClick={handleCreateAndStart} style={{ ...btnStyle, background: "#16a34a", marginTop: 16, padding: "10px 24px", fontSize: 15 }}>
+        <button onClick={handleCreateAndStart} style={{ ...btnStyle, background: "linear-gradient(135deg, #10b981, #34d399)", marginTop: 16, padding: "10px 24px", fontSize: 15 }}>
           Start Training
         </button>
       </section>
@@ -366,7 +370,7 @@ export default function TrainingPage() {
           <button
             onClick={handleDeleteSelected}
             disabled={deleting || selectedSessionIds.length === 0}
-            style={{ ...btnStyle, background: "#b91c1c", opacity: deleting || selectedSessionIds.length === 0 ? 0.6 : 1 }}
+            style={{ ...btnStyle, background: "linear-gradient(135deg, #b91c1c, #dc2626)", opacity: deleting || selectedSessionIds.length === 0 ? 0.6 : 1 }}
           >
             Delete Selected ({selectedSessionIds.length})
           </button>
@@ -374,9 +378,9 @@ export default function TrainingPage() {
         {sessions.length === 0 ? (
           <p style={{ color: "#888" }}>No training sessions yet.</p>
         ) : (
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
             <thead>
-              <tr style={{ textAlign: "left", borderBottom: "1px solid #444" }}>
+              <tr style={{ textAlign: "left", borderBottom: "1px solid var(--line)" }}>
                 <th style={thStyle}>
                   <input
                     type="checkbox"
@@ -394,7 +398,7 @@ export default function TrainingPage() {
             </thead>
             <tbody>
               {sessions.map((s) => (
-                <tr key={s.id} style={{ borderBottom: "1px solid #333" }}>
+                <tr key={s.id} style={{ borderBottom: "1px solid var(--line)" }}>
                   <td style={tdStyle}>
                     <input
                       type="checkbox"
@@ -410,13 +414,13 @@ export default function TrainingPage() {
                   <td style={tdStyle}>{s.final_map50 != null ? (s.final_map50 * 100).toFixed(1) + "%" : "-"}</td>
                   <td style={tdStyle}>{s.progress.toFixed(0)}%</td>
                   <td style={{ ...tdStyle, display: "flex", gap: 8 }}>
-                    <button onClick={() => navigate(`/projects/${pid}/monitoring/${s.id}`)} style={{ ...btnStyle, padding: "4px 8px", fontSize: 12 }}>
+                    <button onClick={() => navigate(`/projects/${pid}/monitoring/${s.id}`)} style={{ ...btnStyle, padding: "6px 10px", fontSize: 13 }}>
                       Monitor
                     </button>
                     <button
                       onClick={() => handleDeleteSession(s)}
                       disabled={deleting}
-                      style={{ ...btnStyle, padding: "4px 8px", fontSize: 12, background: "#b91c1c", opacity: deleting ? 0.6 : 1 }}
+                      style={{ ...btnStyle, padding: "6px 10px", fontSize: 13, background: "linear-gradient(135deg, #b91c1c, #dc2626)", opacity: deleting ? 0.6 : 1 }}
                     >
                       Delete
                     </button>
@@ -433,9 +437,9 @@ export default function TrainingPage() {
 
 function StatBox({ label, value }: { label: string; value: number }) {
   return (
-    <div style={{ textAlign: "center", padding: 12, background: "#222", borderRadius: 8 }}>
+    <div style={{ textAlign: "center", padding: 12, background: "rgba(30, 41, 59, 0.5)", borderRadius: 10, border: "1px solid var(--line)" }}>
       <div style={{ fontSize: 22, fontWeight: 700, color: "#fff" }}>{value}</div>
-      <div style={{ fontSize: 12, color: "#999" }}>{label}</div>
+      <div style={{ fontSize: 14, color: "#cbd5e1" }}>{label}</div>
     </div>
   );
 }
@@ -449,16 +453,41 @@ function StatusBadge({ status }: { status: string }) {
     stopped: "#ca8a04",
   };
   return (
-    <span style={{ padding: "3px 10px", borderRadius: 6, fontSize: 12, fontWeight: 600, background: colors[status] ?? "#666", color: "#fff" }}>
+    <span style={{ padding: "4px 10px", borderRadius: 8, fontSize: 13, fontWeight: 700, background: colors[status] ?? "#666", color: "#fff" }}>
       {status.toUpperCase()}
     </span>
   );
 }
 
-const btnStyle: React.CSSProperties = { padding: "8px 16px", borderRadius: 8, border: "none", background: "#333", color: "#fff", cursor: "pointer", fontSize: 14, fontWeight: 500 };
-const inputStyle: React.CSSProperties = { padding: "8px 12px", borderRadius: 8, border: "1px solid #444", background: "#1a1a1a", color: "#fff", fontSize: 15, width: "100%" };
-const labelStyle: React.CSSProperties = { display: "flex", flexDirection: "column", gap: 5, fontSize: 14, color: "#ccc" };
-const cardStyle: React.CSSProperties = { background: "#1a1a1a", borderRadius: 12, padding: 24, border: "1px solid #2a2a2a" };
-const badgeStyle: React.CSSProperties = { padding: "3px 10px", borderRadius: 6, fontSize: 12, fontWeight: 700, background: "#7c3aed", color: "#fff" };
-const thStyle: React.CSSProperties = { padding: "10px 8px", color: "#999" };
-const tdStyle: React.CSSProperties = { padding: "10px 8px", color: "#e5e5e5" };
+const btnStyle: React.CSSProperties = {
+  padding: "10px 18px",
+  borderRadius: 10,
+  border: "1px solid var(--line)",
+  background: "linear-gradient(180deg, rgba(30, 41, 59, 0.9), rgba(15, 23, 42, 0.95))",
+  color: "var(--text-0)",
+  cursor: "pointer",
+  fontSize: 15,
+  fontWeight: 700,
+  boxShadow: "var(--shadow-1)",
+};
+const inputStyle: React.CSSProperties = {
+  padding: "10px 12px",
+  borderRadius: 10,
+  border: "1px solid var(--line)",
+  background: "rgba(15, 23, 42, 0.88)",
+  color: "var(--text-0)",
+  fontSize: 16,
+  width: "100%",
+};
+const labelStyle: React.CSSProperties = { display: "flex", flexDirection: "column", gap: 6, fontSize: 15, color: "var(--text-1)" };
+const cardStyle: React.CSSProperties = {
+  background: "linear-gradient(165deg, rgba(20, 30, 56, 0.86), rgba(12, 20, 38, 0.86))",
+  borderRadius: 16,
+  padding: 24,
+  border: "1px solid var(--line)",
+  boxShadow: "var(--shadow-1)",
+  backdropFilter: "blur(6px)",
+};
+const badgeStyle: React.CSSProperties = { padding: "3px 10px", borderRadius: 8, fontSize: 12, fontWeight: 700, background: "#0ea5e9", color: "#fff" };
+const thStyle: React.CSSProperties = { padding: "10px 8px", color: "var(--text-2)" };
+const tdStyle: React.CSSProperties = { padding: "10px 8px", color: "var(--text-0)" };

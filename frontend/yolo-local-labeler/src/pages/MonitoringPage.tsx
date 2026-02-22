@@ -198,7 +198,7 @@ export default function MonitoringPage() {
   if (!session) return <div style={{ padding: 24 }}>Session not found</div>;
 
   return (
-    <div style={{ maxWidth: 1200, margin: "0 auto", padding: 24 }}>
+    <div className="page-shell" style={{ maxWidth: 1260 }}>
       {/* Header */}
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 24 }}>
         <button onClick={() => navigate(`/projects/${pid}/training`)} style={btnStyle}>Back</button>
@@ -206,7 +206,7 @@ export default function MonitoringPage() {
           {session.name ?? `Session ${session.id}`}
         </h1>
         <StatusBadge status={session.status} />
-        {connected && <span style={{ color: "#16a34a", fontSize: 12 }}>WS Connected</span>}
+        {connected && <span style={{ color: "#34d399", fontSize: 14, fontWeight: 700 }}>WS Connected</span>}
       </div>
 
       {/* Info bar */}
@@ -218,25 +218,25 @@ export default function MonitoringPage() {
         <Info label="Precision" value={session.final_precision != null ? `${(session.final_precision * 100).toFixed(1)}%` : "-"} />
         <Info label="Recall" value={session.final_recall != null ? `${(session.final_recall * 100).toFixed(1)}%` : "-"} />
         {isRunning && (
-          <button onClick={handleStop} disabled={deleting} style={{ ...btnStyle, background: "#dc2626", alignSelf: "center", opacity: deleting ? 0.6 : 1 }}>
+          <button onClick={handleStop} disabled={deleting} style={{ ...btnStyle, background: "linear-gradient(135deg, #dc2626, #ef4444)", alignSelf: "center", opacity: deleting ? 0.6 : 1 }}>
             Stop Training
           </button>
         )}
-        <button onClick={handleDelete} disabled={deleting} style={{ ...btnStyle, background: "#b91c1c", alignSelf: "center", opacity: deleting ? 0.6 : 1 }}>
+        <button onClick={handleDelete} disabled={deleting} style={{ ...btnStyle, background: "linear-gradient(135deg, #b91c1c, #dc2626)", alignSelf: "center", opacity: deleting ? 0.6 : 1 }}>
           Delete Session
         </button>
       </div>
 
       {session.error_message && (
-        <div style={{ ...cardStyle, marginBottom: 16, background: "#3b1111", borderColor: "#dc2626" }}>
+        <div style={{ ...cardStyle, marginBottom: 16, background: "linear-gradient(165deg, rgba(80, 23, 32, 0.9), rgba(45, 18, 27, 0.9))", borderColor: "rgba(248, 113, 113, 0.55)" }}>
           <strong>Error:</strong> {session.error_message}
         </div>
       )}
 
       {/* Progress Bar */}
       <div style={{ marginBottom: 16 }}>
-        <div style={{ height: 8, background: "#333", borderRadius: 4, overflow: "hidden" }}>
-          <div style={{ height: "100%", width: `${session.progress}%`, background: isRunning ? "#2563eb" : "#16a34a", transition: "width 0.3s" }} />
+        <div style={{ height: 8, background: "rgba(30, 41, 59, 0.7)", borderRadius: 6, overflow: "hidden", border: "1px solid var(--line)" }}>
+          <div style={{ height: "100%", width: `${session.progress}%`, background: isRunning ? "linear-gradient(90deg, #0ea5e9, #22d3ee)" : "linear-gradient(90deg, #10b981, #34d399)", transition: "width 0.3s" }} />
         </div>
       </div>
 
@@ -307,7 +307,7 @@ export default function MonitoringPage() {
 function Info({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <div style={{ fontSize: 12, color: "#999" }}>{label}</div>
+      <div style={{ fontSize: 14, color: "#cbd5e1" }}>{label}</div>
       <div style={{ fontWeight: 600, fontSize: 16, color: "#e5e5e5" }}>{value}</div>
     </div>
   );
@@ -322,11 +322,28 @@ function StatusBadge({ status }: { status: string }) {
     stopped: "#ca8a04",
   };
   return (
-    <span style={{ padding: "4px 12px", borderRadius: 6, fontSize: 12, fontWeight: 700, background: colors[status] ?? "#666", color: "#fff" }}>
+    <span style={{ padding: "5px 12px", borderRadius: 8, fontSize: 13, fontWeight: 800, background: colors[status] ?? "#666", color: "#fff" }}>
       {status.toUpperCase()}
     </span>
   );
 }
 
-const btnStyle: React.CSSProperties = { padding: "8px 16px", borderRadius: 8, border: "none", background: "#333", color: "#fff", cursor: "pointer", fontSize: 14, fontWeight: 500 };
-const cardStyle: React.CSSProperties = { background: "#1a1a1a", borderRadius: 12, padding: 24, border: "1px solid #2a2a2a" };
+const btnStyle: React.CSSProperties = {
+  padding: "10px 18px",
+  borderRadius: 10,
+  border: "1px solid var(--line)",
+  background: "linear-gradient(180deg, rgba(30, 41, 59, 0.9), rgba(15, 23, 42, 0.95))",
+  color: "var(--text-0)",
+  cursor: "pointer",
+  fontSize: 15,
+  fontWeight: 700,
+  boxShadow: "var(--shadow-1)",
+};
+const cardStyle: React.CSSProperties = {
+  background: "linear-gradient(165deg, rgba(20, 30, 56, 0.86), rgba(12, 20, 38, 0.86))",
+  borderRadius: 16,
+  padding: 24,
+  border: "1px solid var(--line)",
+  boxShadow: "var(--shadow-1)",
+  backdropFilter: "blur(6px)",
+};

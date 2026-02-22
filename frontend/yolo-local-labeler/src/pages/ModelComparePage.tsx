@@ -7,6 +7,7 @@ import { projectsApi } from "../api/projects";
 import type { ModelInfo, InferenceResult, CompareBatchItem } from "../api/inference";
 import type { ImageInfo, ProjectWithStats } from "../api/projects";
 import { API_SERVER_URL } from "../api/client";
+import RoundedSelect from "../components/RoundedSelect";
 
 const COMPARE_RESULTS_PAGE_SIZE = 10;
 
@@ -223,28 +224,6 @@ export default function ModelComparePage() {
     }
   }
 
-  async function handleSinglePredict(modelId: number, setter: (r: InferenceResult) => void) {
-    if (!imageId) { alert("Select an image"); return; }
-    setLoading(true);
-    try {
-      const res = await inferenceApi.predict({
-        model_id: modelId,
-        image_id: Number(imageId),
-        conf_threshold: confThreshold,
-        iou_threshold: iouThreshold,
-        save_result_image: true,
-        save_to_db: true,
-      });
-      setter(res.data);
-    } catch (e) {
-      const detail = axios.isAxiosError(e) ? e.response?.data?.detail : undefined;
-      alert(detail ?? "Inference failed");
-      console.error(e);
-    } finally {
-      setLoading(false);
-    }
-  }
-
   async function handleCompareAllImages() {
     if (!model1Id || !model2Id) {
       alert("Select Model A and Model B.");
@@ -365,72 +344,78 @@ export default function ModelComparePage() {
   const nextDisabled = compareAllPage >= totalComparePages || !nextPageReady;
 
   return (
-    <div style={{ maxWidth: 1400, margin: "0 auto", padding: 24 }}>
+    <div className="page-shell" style={{ maxWidth: 1460 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 24 }}>
         <button onClick={() => navigate("/")} style={btnStyle}>Projects</button>
         <h1 style={{ margin: 0 }}>Model Compare / Inference</h1>
       </div>
 
-      <div style={{ ...cardStyle, marginBottom: 16, background: "#111827", borderColor: "#1e3a8a" }}>
-        <div style={{ fontSize: 13, color: "#cbd5e1", marginBottom: 10, fontWeight: 700 }}>How to use</div>
-        <ol style={{ margin: 0, paddingLeft: 18, lineHeight: 1.8, color: "#cbd5e1", fontSize: 13 }}>
+      <div style={{ ...cardStyle, marginBottom: 16, background: "linear-gradient(160deg, rgba(9, 35, 58, 0.88), rgba(10, 25, 45, 0.88))", borderColor: "rgba(56, 189, 248, 0.45)" }}>
+        <div style={{ fontSize: 15, color: "#cbd5e1", marginBottom: 10, fontWeight: 800 }}>How to use</div>
+        <ol style={{ margin: 0, paddingLeft: 20, lineHeight: 1.8, color: "#cbd5e1", fontSize: 14 }}>
           <li>Select Model A and Model B.</li>
           <li>Select a Project, then select an Image from that project.</li>
           <li>Click Compare Both to run both models on the same image.</li>
-          <li>Use Run Model A/B Only for quick single-model checks.</li>
           <li>Use Compare All Images to run the selected project in batch.</li>
         </ol>
       </div>
 
       {/* Controls */}
       <div style={{ ...cardStyle, marginBottom: 16 }}>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 16 }}>
           <label style={labelStyle}>
             Model A
-            <select value={model1Id} onChange={(e) => handleModelAChange(e.target.value)} style={inputStyle}>
-              <option value="">-- Select model --</option>
-              {models.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.name} ({m.model_type}) - mAP50: {m.map50 != null ? (m.map50 * 100).toFixed(1) + "%" : "N/A"}
-                </option>
-              ))}
-            </select>
+            <RoundedSelect
+              value={model1Id ? String(model1Id) : ""}
+              onChange={handleModelAChange}
+              placeholder="-- Select model --"
+              options={models.map((m) => ({
+                value: String(m.id),
+                label: `${m.name} (${m.model_type}) - mAP50: ${m.map50 != null ? (m.map50 * 100).toFixed(1) + "%" : "N/A"}`,
+              }))}
+              style={inputStyle}
+            />
           </label>
 
           <label style={labelStyle}>
             Model B
-            <select value={model2Id} onChange={(e) => handleModelBChange(e.target.value)} style={inputStyle}>
-              <option value="">-- Select model --</option>
-              {models.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.name} ({m.model_type}) - mAP50: {m.map50 != null ? (m.map50 * 100).toFixed(1) + "%" : "N/A"}
-                </option>
-              ))}
-            </select>
+            <RoundedSelect
+              value={model2Id ? String(model2Id) : ""}
+              onChange={handleModelBChange}
+              placeholder="-- Select model --"
+              options={models.map((m) => ({
+                value: String(m.id),
+                label: `${m.name} (${m.model_type}) - mAP50: ${m.map50 != null ? (m.map50 * 100).toFixed(1) + "%" : "N/A"}`,
+              }))}
+              style={inputStyle}
+            />
           </label>
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr 1fr", gap: 16, marginTop: 12 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 16, marginTop: 14 }}>
           <label style={labelStyle}>
             Project
-            <select value={projectId} onChange={(e) => handleProjectChange(e.target.value)} style={inputStyle}>
-              <option value="">-- Select project --</option>
-              {projects.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
+            <RoundedSelect
+              value={projectId ? String(projectId) : ""}
+              onChange={handleProjectChange}
+              placeholder="-- Select project --"
+              options={projects.map((p) => ({ value: String(p.id), label: p.name }))}
+              style={inputStyle}
+            />
           </label>
 
           <label style={labelStyle}>
             Image
-            <select value={imageId} onChange={(e) => setImageId(e.target.value ? Number(e.target.value) : "")} style={inputStyle}>
-              <option value="">-- Select image --</option>
-              {images.map((img) => (
-                <option key={img.id} value={img.id}>{img.filename} ({img.width}x{img.height})</option>
-              ))}
-            </select>
+            <RoundedSelect
+              value={imageId ? String(imageId) : ""}
+              onChange={(value) => setImageId(value ? Number(value) : "")}
+              placeholder="-- Select image --"
+              options={images.map((img) => ({
+                value: String(img.id),
+                label: `${img.filename} (${img.width}x${img.height})`,
+              }))}
+              style={inputStyle}
+            />
           </label>
 
           <label style={labelStyle}>
@@ -447,58 +432,47 @@ export default function ModelComparePage() {
 
           <label style={labelStyle}>
             Batch (All Images)
-            <select
-              value={compareAllBatchSize}
-              onChange={(e) => setCompareAllBatchSize(Number(e.target.value) as 5 | 10)}
+            <RoundedSelect
+              value={String(compareAllBatchSize)}
+              onChange={(value) => setCompareAllBatchSize(Number(value) as 5 | 10)}
+              options={[
+                { value: "10", label: "10 (Recommended)" },
+                { value: "5", label: "5" },
+              ]}
               style={inputStyle}
-            >
-              <option value={10}>10 (Recommended)</option>
-              <option value={5}>5</option>
-            </select>
+            />
           </label>
         </div>
 
-        <div style={{ marginTop: 12, fontSize: 12, color: "#9ca3af", display: "flex", gap: 14, flexWrap: "wrap" }}>
+        <div style={{ marginTop: 14, fontSize: 14, color: "#cbd5e1", display: "flex", gap: 14, flexWrap: "wrap" }}>
           <span>Models: {readyModels ? "ready" : "not ready"}</span>
           <span>Image: {readyImage ? "ready" : "not ready"}</span>
           {selectedProject && <span>Project: {selectedProject.name}</span>}
           {selectedImage && <span>Image: {selectedImage.filename}</span>}
         </div>
 
-        <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
+        <div style={{ display: "flex", gap: 10, marginTop: 16, flexWrap: "wrap" }}>
           <button onClick={handleCompare} disabled={loading || !readyToCompare}
-            style={{ ...btnStyle, background: "#2563eb", padding: "10px 24px" }}>
+            style={{ ...btnStyle, background: "linear-gradient(135deg, #2563eb, #0ea5e9)", padding: "10px 24px" }}>
             {loading ? "Processing..." : "Compare Both (A vs B)"}
           </button>
           <button
             onClick={handleCompareAllImages}
             disabled={loading || !readyToCompareAll}
-            style={{ ...btnStyle, background: "#059669" }}
+            style={{ ...btnStyle, background: "linear-gradient(135deg, #059669, #10b981)" }}
           >
             {loading ? "Processing..." : `Compare All Images (Batch ${compareAllBatchSize})`}
           </button>
-          {model1Id && (
-            <button onClick={() => handleSinglePredict(Number(model1Id), setResult1)} disabled={loading || !imageId}
-              style={{ ...btnStyle, background: "#7c3aed" }}>
-              Run Model A Only (quick)
-            </button>
-          )}
-          {model2Id && (
-            <button onClick={() => handleSinglePredict(Number(model2Id), setResult2)} disabled={loading || !imageId}
-              style={{ ...btnStyle, background: "#7c3aed" }}>
-              Run Model B Only (quick)
-            </button>
-          )}
         </div>
 
         {compareAllProgress && (
-          <div style={{ marginTop: 10, fontSize: 12, color: "#7dd3fc" }}>
+          <div style={{ marginTop: 10, fontSize: 14, color: "#7dd3fc" }}>
             Compare all progress: {compareAllProgress.done}/{compareAllProgress.total}
             {compareAllPrefetching ? " (background prefetch running)" : ""}
           </div>
         )}
         {compareAllSummary && (
-          <div style={{ marginTop: 10, fontSize: 12, color: "#cbd5e1", display: "flex", gap: 14, flexWrap: "wrap" }}>
+          <div style={{ marginTop: 10, fontSize: 14, color: "#cbd5e1", display: "flex", gap: 14, flexWrap: "wrap" }}>
             <span>Total images: {compareAllSummary.totalImages}</span>
             <span>Page: {compareAllSummary.page} ({compareAllSummary.from}-{compareAllSummary.to})</span>
             <span>Avg det A: {compareAllSummary.avgDetectionsA.toFixed(2)}</span>
@@ -523,7 +497,7 @@ export default function ModelComparePage() {
               >
                 Prev 10
               </button>
-              <span style={{ fontSize: 12, color: "#cbd5e1" }}>
+              <span style={{ fontSize: 14, color: "#cbd5e1" }}>
                 Page {compareAllPage}/{totalComparePages}
               </span>
               <button
@@ -540,8 +514,8 @@ export default function ModelComparePage() {
             {currentCompareRows.map((row) => {
               const img = images.find((im) => im.id === row.image_id);
               return (
-                <div key={row.image_id} style={{ border: "1px solid #2a2a2a", borderRadius: 10, padding: 12 }}>
-                  <div style={{ fontSize: 13, color: "#e5e7eb", marginBottom: 8 }}>
+                <div key={row.image_id} style={{ border: "1px solid var(--line)", borderRadius: 12, padding: 12, background: "rgba(15, 23, 42, 0.35)" }}>
+                  <div style={{ fontSize: 15, color: "#e5e7eb", marginBottom: 8 }}>
                     {img?.filename ?? `image_${row.image_id}`} (ID: {row.image_id})
                   </div>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
@@ -581,11 +555,11 @@ function ResultCard({ label, result }: { label: string; result: InferenceResult 
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>
         <div>
-          <div style={{ fontSize: 12, color: "#999" }}>Detections</div>
+          <div style={{ fontSize: 14, color: "#cbd5e1" }}>Detections</div>
           <div style={{ fontWeight: 700, fontSize: 20, color: "#e5e5e5" }}>{result.detection_count}</div>
         </div>
         <div>
-          <div style={{ fontSize: 12, color: "#999" }}>Inference Time</div>
+          <div style={{ fontSize: 14, color: "#cbd5e1" }}>Inference Time</div>
           <div style={{ fontWeight: 700, fontSize: 20, color: "#e5e5e5" }}>{result.inference_time_ms.toFixed(1)}ms</div>
         </div>
       </div>
@@ -599,7 +573,7 @@ function ResultCard({ label, result }: { label: string; result: InferenceResult 
       )}
 
       {result.detections.length > 0 && (
-        <div style={{ marginTop: 12, maxHeight: 200, overflow: "auto", fontSize: 13 }}>
+        <div style={{ marginTop: 12, maxHeight: 220, overflow: "auto", fontSize: 14 }}>
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr style={{ textAlign: "left", borderBottom: "1px solid #444" }}>
@@ -630,9 +604,9 @@ function MiniCompareCard({
   result: InferenceResult & { model_id: number };
 }) {
   return (
-    <div style={{ background: "#141414", borderRadius: 8, padding: 10, border: "1px solid #333" }}>
-      <div style={{ fontSize: 12, color: "#cbd5e1", marginBottom: 6 }}>{title}</div>
-      <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 6 }}>
+    <div style={{ background: "rgba(15, 23, 42, 0.55)", borderRadius: 10, padding: 10, border: "1px solid var(--line)" }}>
+      <div style={{ fontSize: 14, color: "#cbd5e1", marginBottom: 6 }}>{title}</div>
+      <div style={{ fontSize: 14, color: "#94a3b8", marginBottom: 6 }}>
         Det: {result.detection_count} | Time: {result.inference_time_ms.toFixed(1)}ms
       </div>
       {result.result_image_path ? (
@@ -642,7 +616,7 @@ function MiniCompareCard({
           style={{ width: "100%", borderRadius: 6, display: "block" }}
         />
       ) : (
-        <div style={{ fontSize: 12, color: "#6b7280" }}>No result image</div>
+        <div style={{ fontSize: 14, color: "#94a3b8" }}>No result image</div>
       )}
     </div>
   );
@@ -654,7 +628,32 @@ function toImageUrl(path: string) {
   return `${API_SERVER_URL}/${normalized}`;
 }
 
-const btnStyle: React.CSSProperties = { padding: "8px 16px", borderRadius: 8, border: "none", background: "#333", color: "#fff", cursor: "pointer", fontSize: 14, fontWeight: 500 };
-const inputStyle: React.CSSProperties = { padding: "8px 12px", borderRadius: 8, border: "1px solid #444", background: "#1a1a1a", color: "#fff", fontSize: 15, width: "100%" };
-const labelStyle: React.CSSProperties = { display: "flex", flexDirection: "column", gap: 5, fontSize: 14, color: "#ccc" };
-const cardStyle: React.CSSProperties = { background: "#1a1a1a", borderRadius: 12, padding: 24, border: "1px solid #2a2a2a" };
+const btnStyle: React.CSSProperties = {
+  padding: "10px 18px",
+  borderRadius: 10,
+  border: "1px solid var(--line)",
+  background: "linear-gradient(180deg, rgba(30, 41, 59, 0.9), rgba(15, 23, 42, 0.95))",
+  color: "var(--text-0)",
+  cursor: "pointer",
+  fontSize: 15,
+  fontWeight: 700,
+  boxShadow: "var(--shadow-1)",
+};
+const inputStyle: React.CSSProperties = {
+  padding: "10px 12px",
+  borderRadius: 10,
+  border: "1px solid var(--line)",
+  background: "rgba(15, 23, 42, 0.88)",
+  color: "var(--text-0)",
+  fontSize: 16,
+  width: "100%",
+};
+const labelStyle: React.CSSProperties = { display: "flex", flexDirection: "column", gap: 6, fontSize: 15, color: "var(--text-1)" };
+const cardStyle: React.CSSProperties = {
+  background: "linear-gradient(165deg, rgba(20, 30, 56, 0.86), rgba(12, 20, 38, 0.86))",
+  borderRadius: 16,
+  padding: 24,
+  border: "1px solid var(--line)",
+  boxShadow: "var(--shadow-1)",
+  backdropFilter: "blur(6px)",
+};

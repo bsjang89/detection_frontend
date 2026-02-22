@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import CanvasLabeler from "../components/CanvasLabeler";
+import RoundedSelect from "../components/RoundedSelect";
 import type { BoxAnno, ClassDef } from "../types";
 import { pickFolderImages, ensureSubDir, writeTextFile } from "../utils/fs";
 import { exportBBoxYOLO, exportOBBYOLO } from "../utils/yoloExport";
@@ -166,12 +167,20 @@ export default function LabelingPage() {
     return { labeled, total: images.length };
   }, [images, annos]);
 
+  const classNameMap = useMemo(() => {
+    const map: Record<number, string> = {};
+    for (const c of classes) {
+      map[c.id] = c.name;
+    }
+    return map;
+  }, [classes]);
+
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "320px 1fr 340px", height: "100vh" }}>
+    <div className="workbench-shell" style={{ display: "grid", gridTemplateColumns: "minmax(280px, 22vw) 1fr minmax(300px, 24vw)", height: "100vh", color: "var(--text-0)" }}>
       {/* Left */}
-      <div style={{ borderRight: "1px solid #e5e7eb", padding: 12, overflow: "auto" }}>
+      <div style={{ borderRight: "1px solid var(--line)", padding: 12, overflow: "auto", background: "linear-gradient(165deg, rgba(20, 30, 56, 0.86), rgba(12, 20, 38, 0.86))" }}>
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <button onClick={() => navigate("/")} style={{ fontSize: 12 }}>Projects</button>
+          <button onClick={() => navigate("/")} style={{ fontSize: 14 }}>Projects</button>
           <button onClick={onOpenFolder}>Open Folder</button>
           <button onClick={prev} disabled={!images.length || idx === 0}>Prev (A/&#x2190;)</button>
           <button onClick={next} disabled={!images.length || idx === images.length - 1}>Next (D/&#x2192;)</button>
@@ -179,7 +188,7 @@ export default function LabelingPage() {
           <button onClick={loadSession}>Load Session</button>
         </div>
 
-        <div style={{ marginTop: 10, fontSize: 13, opacity: 0.8 }}>
+        <div style={{ marginTop: 10, fontSize: 15, opacity: 0.9 }}>
           {progress.labeled}/{progress.total} labeled
         </div>
 
@@ -195,14 +204,15 @@ export default function LabelingPage() {
                   padding: 8,
                   borderRadius: 10,
                   marginBottom: 6,
-                  background: i === idx ? "#e5e7eb" : "transparent",
+                  background: i === idx ? "rgba(14, 165, 233, 0.22)" : "transparent",
+                  border: i === idx ? "1px solid var(--line-strong)" : "1px solid transparent",
                   display: "flex",
                   justifyContent: "space-between",
                   gap: 10,
                 }}
               >
                 <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{im.name}</div>
-                <div style={{ fontSize: 12, opacity: 0.7 }}>{has ? "\u25CF" : "\u25CB"}</div>
+                <div style={{ fontSize: 13, opacity: 0.8 }}>{has ? "\u25CF" : "\u25CB"}</div>
               </div>
             );
           })}
@@ -210,16 +220,22 @@ export default function LabelingPage() {
       </div>
 
       {/* Center */}
-      <div style={{ padding: 12, overflow: "auto" }}>
+      <div style={{ padding: 12, overflow: "auto", background: "rgba(8, 15, 30, 0.68)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
-          <div style={{ fontWeight: 600 }}>{current?.name ?? "No image"}</div>
+          <div style={{ fontWeight: 700, fontSize: 17 }}>{current?.name ?? "No image"}</div>
           <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
             <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
               Export:
-              <select value={exportMode} onChange={(e) => setExportMode(e.target.value as "bbox" | "obb")}>
-                <option value="obb">OBB (rotated)</option>
-                <option value="bbox">BBox (normal YOLO)</option>
-              </select>
+              <div style={{ minWidth: 220 }}>
+                <RoundedSelect
+                  value={exportMode}
+                  onChange={(value) => setExportMode(value as "bbox" | "obb")}
+                  options={[
+                    { value: "obb", label: "OBB (rotated)" },
+                    { value: "bbox", label: "BBox (normal YOLO)" },
+                  ]}
+                />
+              </div>
             </label>
             <button onClick={exportAll} disabled={!images.length}>Save / Export Labels</button>
           </div>
@@ -232,10 +248,11 @@ export default function LabelingPage() {
               boxes={currentBoxes}
               setBoxes={setCurrentBoxes}
               activeClassId={activeClassId}
+              classNames={classNameMap}
               viewerHeight="calc(100vh - 120px)"
             />
           ) : (
-            <div style={{ padding: 20, border: "1px dashed #9ca3af", borderRadius: 12 }}>
+            <div style={{ padding: 20, border: "1px dashed var(--line)", borderRadius: 12 }}>
               Open Folder 를 눌러 이미지 폴더를 선택하세요.
             </div>
           )}
@@ -243,9 +260,9 @@ export default function LabelingPage() {
       </div>
 
       {/* Right */}
-      <div style={{ borderLeft: "1px solid #e5e7eb", padding: 12, overflow: "auto" }}>
+      <div style={{ borderLeft: "1px solid var(--line)", padding: 12, overflow: "auto", background: "linear-gradient(165deg, rgba(20, 30, 56, 0.86), rgba(12, 20, 38, 0.86))" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <div style={{ fontWeight: 700 }}>Classes</div>
+          <div style={{ fontWeight: 800, fontSize: 18 }}>Classes</div>
           <button onClick={addClass}>+ Add</button>
         </div>
 
@@ -258,20 +275,20 @@ export default function LabelingPage() {
                 key={c.id}
                 style={{
                   padding: 10,
-                  border: "1px solid #e5e7eb",
+                  border: "1px solid var(--line)",
                   borderRadius: 12,
-                  background: c.id === activeClassId ? "#111827" : "white",
-                  color: c.id === activeClassId ? "white" : "black",
+                  background: c.id === activeClassId ? "rgba(14, 165, 233, 0.2)" : "rgba(15, 23, 42, 0.65)",
+                  color: "var(--text-0)",
                 }}
               >
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                  <div style={{ fontSize: 12, opacity: 0.8 }}>Key: {c.id}</div>
-                  <button onClick={() => deleteClass(c.id)} style={{ fontSize: 12 }}>Delete</button>
+                  <div style={{ fontSize: 13, opacity: 0.9 }}>Key: {c.id}</div>
+                  <button onClick={() => deleteClass(c.id)} style={{ fontSize: 13 }}>Delete</button>
                 </div>
                 <input
                   value={c.name}
                   onChange={(e) => renameClass(c.id, e.target.value)}
-                  style={{ width: "100%", marginTop: 6, padding: "8px 10px", borderRadius: 10, border: "1px solid #e5e7eb" }}
+                  style={{ width: "100%", marginTop: 6, padding: "8px 10px", borderRadius: 10, border: "1px solid var(--line)", background: "rgba(15, 23, 42, 0.88)", color: "var(--text-0)" }}
                 />
                 <button onClick={() => setActiveClassId(c.id)} style={{ marginTop: 8, width: "100%" }}>Select</button>
               </div>
@@ -279,8 +296,8 @@ export default function LabelingPage() {
         </div>
 
         <div style={{ marginTop: 16 }}>
-          <div style={{ fontWeight: 700 }}>Tips</div>
-          <ul style={{ fontSize: 13, opacity: 0.8, lineHeight: 1.6 }}>
+          <div style={{ fontWeight: 800, fontSize: 16 }}>Tips</div>
+          <ul style={{ fontSize: 14, opacity: 0.9, lineHeight: 1.6 }}>
             <li>빈 공간 드래그: 새 박스 생성</li>
             <li>박스 클릭: 선택 &rarr; 핸들로 resize</li>
             <li>선택 상태에서 회전 핸들로 rotate</li>

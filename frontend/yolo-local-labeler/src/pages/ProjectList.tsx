@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import { projectsApi } from "../api/projects";
 import type { ProjectWithStats, TaskType } from "../api/projects";
+import RoundedSelect from "../components/RoundedSelect";
 
 export default function ProjectList() {
   const navigate = useNavigate();
@@ -62,14 +63,11 @@ export default function ProjectList() {
   }
 
   return (
-    <div style={{ maxWidth: 1200, margin: "0 auto", padding: 24 }}>
+    <div className="page-shell" style={{ maxWidth: 1240 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
-        <h1 style={{ margin: 0 }}>Projects</h1>
+        <h1 style={{ margin: 0 }}>Detection</h1>
         <div style={{ display: "flex", gap: 8 }}>
-          <button onClick={() => navigate("/labeling")} style={btnStyle}>
-            Labeler (Local)
-          </button>
-          <button onClick={() => setShowCreate(true)} style={{ ...btnStyle, background: "#2563eb" }}>
+          <button onClick={() => setShowCreate(true)} style={{ ...btnStyle, background: "linear-gradient(135deg, #0ea5e9, #22d3ee)" }}>
             + New Project
           </button>
         </div>
@@ -91,12 +89,17 @@ export default function ProjectList() {
               onChange={(e) => setNewDesc(e.target.value)}
               style={inputStyle}
             />
-            <select value={newType} onChange={(e) => setNewType(e.target.value as TaskType)} style={inputStyle}>
-              <option value="bbox">BBox (Standard Detection)</option>
-              <option value="obb">OBB (Oriented Bounding Box)</option>
-            </select>
+            <RoundedSelect
+              value={newType}
+              onChange={(value) => setNewType(value as TaskType)}
+              options={[
+                { value: "bbox", label: "BBox (Standard Detection)" },
+                { value: "obb", label: "OBB (Oriented Bounding Box)" },
+              ]}
+              style={inputStyle}
+            />
             <div style={{ display: "flex", gap: 8 }}>
-              <button onClick={handleCreate} style={{ ...btnStyle, background: "#16a34a" }}>
+              <button onClick={handleCreate} style={{ ...btnStyle, background: "linear-gradient(135deg, #10b981, #34d399)" }}>
                 Create
               </button>
               <button onClick={() => setShowCreate(false)} style={btnStyle}>
@@ -138,11 +141,28 @@ export default function ProjectList() {
                 <button onClick={() => navigate(`/projects/${p.id}`)} style={{ ...btnStyle, flex: 1 }}>
                   Open
                 </button>
-                <button onClick={() => navigate(`/projects/${p.id}/training`)} style={{ ...btnStyle, flex: 1, background: "#7c3aed" }}>
+                <button
+                  onClick={() => navigate(`/projects/${p.id}/training`)}
+                  style={{
+                    ...btnStyle,
+                    flex: 1,
+                    borderColor: "rgba(56, 189, 248, 0.55)",
+                    background: "linear-gradient(135deg, #38bdf8 0%, #0ea5e9 45%, #0369a1 100%)",
+                    boxShadow: "none",
+                  }}
+                >
                   Train
                 </button>
-                <button onClick={() => handleDelete(p.id)} style={{ ...btnStyle, background: "#dc2626" }}>
-                  Del
+                <button
+                  onClick={() => handleDelete(p.id)}
+                  style={{
+                    ...btnStyle,
+                    borderColor: "rgba(248, 113, 113, 0.65)",
+                    background: "linear-gradient(135deg, #ef4444 0%, #dc2626 45%, #991b1b 100%)",
+                    boxShadow: "none",
+                  }}
+                >
+                  Delete
                 </button>
               </div>
             </div>
@@ -156,37 +176,40 @@ export default function ProjectList() {
 function Stat({ label, value }: { label: string; value: number }) {
   return (
     <div>
-      <div style={{ color: "#999", fontSize: 12 }}>{label}</div>
-      <div style={{ fontWeight: 600, fontSize: 16, color: "#fff" }}>{value}</div>
+      <div style={{ color: "#cbd5e1", fontSize: 14 }}>{label}</div>
+      <div style={{ fontWeight: 700, fontSize: 20, color: "#fff" }}>{value}</div>
     </div>
   );
 }
 
 const btnStyle: React.CSSProperties = {
-  padding: "8px 16px",
-  borderRadius: 8,
-  border: "none",
-  background: "#333",
-  color: "#fff",
+  padding: "10px 18px",
+  borderRadius: 10,
+  border: "1px solid var(--line)",
+  background: "linear-gradient(180deg, rgba(30, 41, 59, 0.9), rgba(15, 23, 42, 0.95))",
+  color: "var(--text-0)",
   cursor: "pointer",
-  fontSize: 14,
-  fontWeight: 500,
+  fontSize: 15,
+  fontWeight: 700,
+  boxShadow: "none",
 };
 
 const inputStyle: React.CSSProperties = {
-  padding: "10px 14px",
-  borderRadius: 8,
-  border: "1px solid #444",
-  background: "#1a1a1a",
-  color: "#fff",
-  fontSize: 15,
+  padding: "12px 14px",
+  borderRadius: 10,
+  border: "1px solid var(--line)",
+  background: "rgba(15, 23, 42, 0.88)",
+  color: "var(--text-0)",
+  fontSize: 16,
 };
 
 const cardStyle: React.CSSProperties = {
-  background: "#1a1a1a",
-  borderRadius: 12,
+  background: "linear-gradient(165deg, rgba(20, 30, 56, 0.86), rgba(12, 20, 38, 0.86))",
+  borderRadius: 16,
   padding: 24,
-  border: "1px solid #2a2a2a",
+  border: "1px solid var(--line)",
+  boxShadow: "var(--shadow-1)",
+  backdropFilter: "blur(6px)",
   marginBottom: 16,
 };
 
@@ -196,7 +219,7 @@ function badgeStyle(type: string): React.CSSProperties {
     borderRadius: 6,
     fontSize: 12,
     fontWeight: 700,
-    background: type === "obb" ? "#7c3aed" : "#2563eb",
+    background: type === "obb" ? "#0ea5e9" : "#2563eb",
     color: "#fff",
   };
 }

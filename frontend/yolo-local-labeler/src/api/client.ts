@@ -1,6 +1,11 @@
 import axios from "axios";
 
-const API_SERVER_URL = (import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000").replace(/\/+$/, "");
+const runtimeDefaultApiServerUrl =
+  typeof window !== "undefined"
+    ? `${window.location.protocol}//${window.location.hostname}:8000`
+    : "http://localhost:8000";
+
+const API_SERVER_URL = (import.meta.env.VITE_API_BASE_URL ?? runtimeDefaultApiServerUrl).replace(/\/+$/, "");
 
 function normalizeApiBaseUrl(baseUrl: string): string {
   const trimmed = baseUrl.replace(/\/+$/, "");

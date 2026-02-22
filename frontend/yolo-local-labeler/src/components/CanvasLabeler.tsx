@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Stage, Layer, Rect, Image as KImage, Transformer } from "react-konva";
+import { Stage, Layer, Rect, Image as KImage, Transformer, Text, Group } from "react-konva";
 import useImage from "use-image";
 import type { BoxAnno } from "../types";
 
@@ -28,6 +28,7 @@ type Props = {
   activeClassId: number;
   imageUrl: string;
   classColors?: Record<number, string>;
+  classNames?: Record<number, string>;
   viewerHeight?: number | string;
   inferenceOverlays?: InferenceOverlay[];
   showInferenceOverlays?: boolean;
@@ -48,6 +49,7 @@ export default function CanvasLabeler({
   setBoxes,
   activeClassId,
   classColors = {},
+  classNames = {},
   viewerHeight = "76vh",
   inferenceOverlays = [],
   showInferenceOverlays = false,
@@ -62,6 +64,7 @@ export default function CanvasLabeler({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [draft, setDraft] = useState<BoxAnno | null>(null);
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
 
   const [lastSize, setLastSize] = useState<{ w: number; h: number; rotation: number } | null>(null);
   const [ghostPos, setGhostPos] = useState<{ x: number; y: number } | null>(null);
@@ -178,10 +181,12 @@ export default function CanvasLabeler({
 
   const imageToRect = useCallback((b: Pick<BoxAnno, "cx" | "cy" | "w" | "h" | "rotation">) => {
     return {
-      x: b.cx - b.w / 2,
-      y: b.cy - b.h / 2,
+      x: b.cx,
+      y: b.cy,
       width: b.w,
       height: b.h,
+      offsetX: b.w / 2,
+      offsetY: b.h / 2,
       rotation: b.rotation,
     };
   }, []);
@@ -233,6 +238,7 @@ export default function CanvasLabeler({
     setSelectedId(null);
     setDraft(null);
     setIsDrawing(false);
+    setHoveredId(null);
     setIsPanning(false);
     panStartRef.current = null;
     trRef.current?.nodes([]);
@@ -257,7 +263,16 @@ export default function CanvasLabeler({
 
   useEffect(() => {
     if (!selectedId) return;
-    setBoxes((prev) => prev.map((b) => (b.id === selectedId ? { ...b, classId: activeClassId } : b)));
+    setBoxes((prev) => {
+      let changed = false;
+      const next = prev.map((b) => {
+        if (b.id !== selectedId) return b;
+        if (b.classId === activeClassId) return b;
+        changed = true;
+        return { ...b, classId: activeClassId };
+      });
+      return changed ? next : prev;
+    });
   }, [activeClassId, selectedId, setBoxes]);
 
   function handleWheel(e: any) {
@@ -512,8 +527,12 @@ export default function CanvasLabeler({
                 {...imageToRect(overlay)}
                 stroke={overlay.canConvert === false ? "rgba(148, 163, 184, 0.9)" : "rgba(56, 189, 248, 0.95)"}
                 fill={overlay.canConvert === false ? "rgba(148, 163, 184, 0.18)" : "rgba(56, 189, 248, 0.25)"}
-                strokeWidth={8}
-                dash={[8, 5]}
+                strokeWidth={3}
+                strokeScaleEnabled={false}
+                cornerRadius={4}
+                dash={[10, 7]}
+                shadowBlur={8}
+                shadowColor={overlay.canConvert === false ? "rgba(148, 163, 184, 0.6)" : "rgba(56, 189, 248, 0.65)"}
                 draggable={false}
                 listening={!panMode}
                 onClick={() => {
@@ -525,67 +544,178 @@ export default function CanvasLabeler({
               />
             ))}
 
-            {boxes.map((b) => (
-              <Rect
-                key={b.id}
-                id={`box-${b.id}`}
-                {...imageToRect(b)}
-                stroke={getClassColor(b.classId)}
-                strokeWidth={20}
-                draggable={!panMode}
-                onClick={() => !panMode && setSelectedId(b.id)}
-                onTap={() => !panMode && setSelectedId(b.id)}
-                onDragEnd={(e) => {
-                  const node = e.target;
-                  updateBox(b.id, {
-                    cx: node.x() + b.w / 2,
-                    cy: node.y() + b.h / 2,
-                  });
-                }}
-                onTransformEnd={(e) => {
-                  const node = e.target;
-                  const scaleX = node.scaleX();
-                  const scaleY = node.scaleY();
-                  const newW = node.width() * scaleX;
-                  const newH = node.height() * scaleY;
-                  const newRot = node.rotation();
-                  node.scaleX(1);
-                  node.scaleY(1);
-                  updateBox(b.id, {
-                    cx: node.x() + newW / 2,
-                    cy: node.y() + newH / 2,
-                    w: newW,
-                    h: newH,
-                    rotation: newRot,
-                  });
-                  setLastSize({ w: newW, h: newH, rotation: newRot });
-                }}
-              />
-            ))}
+            {boxes.map((b) => {
+              const color = getClassColor(b.classId);
+              const isSelected = selectedId === b.id;
+              const isHovered = hoveredId === b.id;
+              const strokeWidth = isSelected ? 4.2 : isHovered ? 3.6 : 3.2;
+              const baseRect = imageToRect(b);
+              const rectLeft = b.cx - b.w / 2;
+              const rectTop = b.cy - b.h / 2;
+              const labelText = classNames[b.classId] ?? `Class ${b.classId}`;
+              const labelFontSize = 14;
+              const labelPadX = 8;
+              const labelPadY = 4;
+              const labelHeight = labelFontSize + labelPadY * 2;
+              const labelWidth = Math.max(70, labelText.length * (labelFontSize * 0.58) + labelPadX * 2);
+              const labelUiScale = viewScale > 0 ? 1 / viewScale : 1;
+              const labelWidthInImage = labelWidth * labelUiScale;
+              const labelHeightInImage = labelHeight * labelUiScale;
+              const labelGapPx = 4;
+              const labelInsetXPx = 6;
+              const canPlaceLabel = imgW > 0 && imgH > 0;
+              const theta = (b.rotation * Math.PI) / 180;
+              const tangentX = Math.cos(theta);
+              const tangentY = Math.sin(theta);
+              const normalX = Math.sin(theta);
+              const normalY = -Math.cos(theta);
+              const offsetToTop = (labelHeight + labelGapPx) * labelUiScale;
+              const insetAlongTop = labelInsetXPx * labelUiScale;
+              const labelX = clamp(
+                rectLeft + tangentX * insetAlongTop + normalX * offsetToTop,
+                0,
+                Math.max(0, imgW - labelWidthInImage)
+              );
+              const labelY = clamp(
+                rectTop + tangentY * insetAlongTop + normalY * offsetToTop,
+                0,
+                Math.max(0, imgH - labelHeightInImage)
+              );
+              return (
+                <React.Fragment key={b.id}>
+                  <Rect
+                    {...baseRect}
+                    fill={color}
+                    opacity={isSelected ? 0.22 : isHovered ? 0.16 : 0.12}
+                    cornerRadius={6}
+                    listening={false}
+                  />
+                  <Rect
+                    {...baseRect}
+                    stroke="rgba(15, 23, 42, 0.9)"
+                    strokeWidth={strokeWidth + 1.6}
+                    strokeScaleEnabled={false}
+                    cornerRadius={6}
+                    listening={false}
+                  />
+                  <Rect
+                    id={`box-${b.id}`}
+                    {...baseRect}
+                    stroke={color}
+                    strokeWidth={strokeWidth}
+                    strokeScaleEnabled={false}
+                    cornerRadius={6}
+                    shadowBlur={isSelected ? 10 : isHovered ? 7 : 5}
+                    shadowColor={color}
+                    draggable={!panMode}
+                    onMouseEnter={() => !panMode && setHoveredId(b.id)}
+                    onMouseLeave={() => setHoveredId((prev) => (prev === b.id ? null : prev))}
+                    onClick={() => !panMode && setSelectedId(b.id)}
+                    onTap={() => !panMode && setSelectedId(b.id)}
+                    onDragEnd={(e) => {
+                      const node = e.target;
+                      updateBox(b.id, {
+                        cx: node.x(),
+                        cy: node.y(),
+                      });
+                    }}
+                    onTransformEnd={(e) => {
+                      const node = e.target;
+                      const scaleX = node.scaleX();
+                      const scaleY = node.scaleY();
+                      const newW = Math.max(2, Math.abs(node.width() * scaleX));
+                      const newH = Math.max(2, Math.abs(node.height() * scaleY));
+                      const newRot = node.rotation();
+                      node.scaleX(1);
+                      node.scaleY(1);
+                      updateBox(b.id, {
+                        cx: node.x(),
+                        cy: node.y(),
+                        w: newW,
+                        h: newH,
+                        rotation: newRot,
+                      });
+                      setLastSize({ w: newW, h: newH, rotation: newRot });
+                    }}
+                  />
+                  {canPlaceLabel && (
+                    <Group
+                      x={labelX}
+                      y={labelY}
+                      scaleX={labelUiScale}
+                      scaleY={labelUiScale}
+                      rotation={b.rotation}
+                      listening={false}
+                    >
+                      <Rect
+                        x={0}
+                        y={0}
+                        width={labelWidth}
+                        height={labelHeight}
+                        fill="rgba(15, 23, 42, 0.78)"
+                        stroke={color}
+                        strokeWidth={1.2}
+                        strokeScaleEnabled={false}
+                        cornerRadius={7}
+                        listening={false}
+                      />
+                      <Text
+                        x={labelPadX}
+                        y={labelPadY}
+                        text={labelText}
+                        fontSize={labelFontSize}
+                        fontStyle="bold"
+                        fill="#f8fafc"
+                        listening={false}
+                      />
+                    </Group>
+                  )}
+                </React.Fragment>
+              );
+            })}
 
             {!panMode && !isDrawing && lastSize && ghostPos && (
               <Rect
-                x={ghostPos.x - lastSize.w / 2}
-                y={ghostPos.y - lastSize.h / 2}
-                width={lastSize.w}
-                height={lastSize.h}
-                rotation={lastSize.rotation}
+                {...imageToRect({
+                  cx: ghostPos.x,
+                  cy: ghostPos.y,
+                  w: lastSize.w,
+                  h: lastSize.h,
+                  rotation: lastSize.rotation,
+                })}
                 stroke={getClassColor(activeClassId)}
-                strokeWidth={20}
-                dash={[6, 4]}
-                opacity={0.5}
+                strokeWidth={3}
+                strokeScaleEnabled={false}
+                dash={[8, 6]}
+                cornerRadius={6}
+                opacity={0.75}
                 listening={false}
               />
             )}
 
             {!panMode && draft && (
-              <Rect
-                {...imageToRect(draft)}
-                stroke={getClassColor(draft.classId, "yellow")}
-                strokeWidth={20}
-                dash={[8, 6]}
-                listening={false}
-              />
+              <>
+                <Rect
+                  {...imageToRect(draft)}
+                  stroke="rgba(15, 23, 42, 0.92)"
+                  strokeWidth={4.8}
+                  strokeScaleEnabled={false}
+                  cornerRadius={6}
+                  listening={false}
+                />
+                <Rect
+                  {...imageToRect(draft)}
+                  stroke={getClassColor(draft.classId, "yellow")}
+                  fill="rgba(248, 250, 252, 0.12)"
+                  strokeWidth={3.2}
+                  strokeScaleEnabled={false}
+                  cornerRadius={6}
+                  dash={[10, 7]}
+                  shadowBlur={8}
+                  shadowColor={getClassColor(draft.classId, "yellow")}
+                  listening={false}
+                />
+              </>
             )}
 
             {!panMode && (
@@ -593,6 +723,27 @@ export default function CanvasLabeler({
                 ref={trRef}
                 keepRatio={false}
                 rotateEnabled
+                anchorSize={10}
+                anchorCornerRadius={6}
+                anchorFill="#38bdf8"
+                anchorStroke="#0f172a"
+                anchorStrokeWidth={1}
+                borderStroke="#7dd3fc"
+                borderStrokeWidth={1.5}
+                borderDash={[5, 4]}
+                rotateAnchorOffset={32}
+                rotateAnchorCursor="grab"
+                anchorStyleFunc={(anchor) => {
+                  const anchorName = anchor.name?.() ?? "";
+                  if (anchorName.includes("rotater")) {
+                    anchor.setAttrs({
+                      fill: "#f59e0b",
+                      stroke: "#7c2d12",
+                      strokeWidth: 1.5,
+                      cursor: "grab",
+                    });
+                  }
+                }}
                 enabledAnchors={[
                   "top-left",
                   "top-right",

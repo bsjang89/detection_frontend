@@ -46,6 +46,7 @@ export interface ImageInfo {
   filename: string;
   file_path: string;
   thumbnail_path?: string | null;
+  viewer_path?: string | null;
   width: number;
   height: number;
   split_type: string;
@@ -60,6 +61,7 @@ export interface UploadImageResult {
   filename: string;
   file_path?: string;
   thumbnail_path?: string;
+  viewer_path?: string;
   width?: number;
   height?: number;
   status?: "uploaded" | "skipped";
